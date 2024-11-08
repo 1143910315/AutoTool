@@ -1,0 +1,109 @@
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+  
+jobs:
+  build-windows:
+    strategy:
+      matrix:
+        config:
+          - { mode: debug, arch: x86, platform: windows }
+          - { mode: debug, arch: x64, platform: windows }
+          # - { mode: debug, arch: arm, platform: windows }
+          - { mode: debug, arch: arm64, platform: windows }
+          # - { mode: debug, arch: arm64ec, platform: windows }
+          - { mode: release, arch: x86, platform: windows }
+          - { mode: release, arch: x64, platform: windows }
+          # - { mode: release, arch: arm, platform: windows }
+          - { mode: release, arch: arm64, platform: windows }
+          # - { mode: release, arch: arm64ec, platform: windows }
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+      
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/.xmake
+          key: xmake-${{ hashFiles('xmake.lua') }}
+          restore-keys: |
+            xmake-
+
+      - run: |
+          xmake repo -u
+
+      - run: |
+          xmake f -a ${{ matrix.config.arch }} -m ${{ matrix.config.mode }} -p ${{ matrix.config.platform }} -v -y
+
+      - run: |
+          xmake -v -y
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-${{ matrix.config.mode }}-${{ matrix.config.platform }}-${{ matrix.config.arch }}-${{ github.sha }}
+          path: |
+            build/${{ matrix.config.platform }}/${{ matrix.config.arch }}/${{ matrix.config.mode }}/
+  build-linux:
+    strategy:
+      matrix:
+        config:
+          - { mode: debug, platform: linux }
+          - { mode: release, platform: linux }
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+
+      - name: Add repository and update
+        run: |
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+
+      - name: Last GCC package
+        id: gcc-package
+        run: |
+          LATEST_GCC_PACKAGE=$(apt-cache search gcc | grep '^gcc-[0-9]* ' | sort -rV | head -n 1 | cut -d ' ' -f 1)
+          echo "latest_gcc_package=$LATEST_GCC_PACKAGE" >> $GITHUB_OUTPUT
+
+      - name: Last G++ package
+        id: gpp-package
+        run: |
+          LATEST_GPP_PACKAGE=$(apt-cache search g++ | grep '^g++-[0-9]* ' | sort -rV | head -n 1 | cut -d ' ' -f 1)
+          echo "latest_gpp_package=$LATEST_GPP_PACKAGE" >> $GITHUB_OUTPUT
+
+      - name: Setup GCC&G++
+        run: |
+          sudo apt-get install -y ${{ steps.gcc-package.outputs.latest_gcc_package }} ${{ steps.gpp-package.outputs.latest_gpp_package }}
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.xmake
+          key: xmake-${{ hashFiles('xmake.lua') }}
+          restore-keys: |
+            xmake-
+
+      - run: |
+          xmake repo -u
+
+      - name: Cheak OS Arch
+        id: os-arch
+        run: |
+          XMAKE_OS_ARCH=$(xmake l os.subarch | sed -E 's/\^\[\[//g; s/\^\[//g; s/\x1B\[[0-9;]*[JKmsu]//g' | tr -d '"')
+          echo "xmake_os_arch=$XMAKE_OS_ARCH" >> $GITHUB_OUTPUT
+
+      - run: |
+          xmake f --toolchain=${{ steps.gcc-package.outputs.latest_gcc_package }} -c -a ${{ steps.os-arch.outputs.xmake_os_arch }} -m ${{ matrix.config.mode }} -v -y
+
+      - run: |
+          xmake -v -y
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-${{ matrix.config.mode }}-${{ matrix.config.platform }}-${{ steps.os-arch.outputs.xmake_os_arch }}-${{ github.sha }}
+          path: |
+            build/${{ matrix.config.platform }}/${{ steps.os-arch.outputs.xmake_os_arch }}/${{ matrix.config.mode }}/
