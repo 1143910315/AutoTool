@@ -1,10 +1,22 @@
+#include "command/Command.h"
+#include "github/webhook/WebhookCommand.h"
 #include <iostream>
 #include <pcre2.h>
+
+#ifdef _WIN32
 #include <Windows.h>
+#endif
+
 void testRegex();
 int main(int argc, char **argv) {
-    SetConsoleOutputCP(CP_UTF8);
 
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
+
+    github::webhook::WebhookCommand::init();
+    while (command::Command::instance()->execute()) {
+    }
     testRegex();
     return 0;
 }
