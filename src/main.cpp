@@ -1,5 +1,6 @@
 #include "command/Command.h"
 #include "github/webhook/WebhookCommand.h"
+#include <cstring>
 #include <iostream>
 #include <pcre2.h>
 
@@ -9,7 +10,6 @@
 
 void testRegex();
 int main(int argc, char **argv) {
-
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
 #endif

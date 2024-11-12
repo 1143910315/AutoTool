@@ -1,4 +1,5 @@
 #include "Pcre2Implementation.h"
+#include <cstring>
 #include <format>
 #include <pcre2.h>
 namespace regex {
