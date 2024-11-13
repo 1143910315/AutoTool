@@ -35,6 +35,7 @@ bool command::Command::execute() {
         }
         outputString += "0.上一级\n-1.退出";
         std::cout << outputString << std::endl;
+        std::cout << "请选择：";
         int input;
         std::cin >> input;
         if (input > 0 && static_cast<size_t>(input) <= commandList.size()) {

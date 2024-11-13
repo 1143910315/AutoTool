@@ -10,7 +10,7 @@ void github::webhook::WebhookCommand::init() {
         std::cout << "请输入go代码文件路径:";
         std::cin >> path;
         if (std::cin) {
-            Webhook::transform(removeQuotes(path));
+            std::cout << Webhook::transform(removeQuotes(path)) << std::endl;
             return true;
         } else {
             std::cin.clear();
