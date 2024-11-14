@@ -6,15 +6,21 @@ namespace regex {
     class Pcre2Implementation::Pcre2Private {
     public:
         static std::expected<Pcre2Private *, std::string> generate(const std::string& pattern) {
+            pcre2_compile_context *cc = pcre2_compile_context_create(nullptr);
+            pcre2_set_newline(cc, PCRE2_NEWLINE_LF);
+            uint8_t *table = (uint8_t *)pcre2_maketables(nullptr);
+            table[842] = 0;                                   // 换行符不作为\s
+            pcre2_set_character_tables(cc, table);
+            // pcre2_set_compile_extra_options(cc, PCRE2_EXTRA_MATCH_LINE);
             int errornumber;
             PCRE2_SIZE erroroffset;
             pcre2_code *re = pcre2_compile(
-                reinterpret_cast<PCRE2_SPTR>(pattern.data()),        /* the pattern */
-                PCRE2_ZERO_TERMINATED,                               /* indicates pattern is zero-terminated */
-                PCRE2_UTF | PCRE2_NEWLINE_ANYCRLF | PCRE2_MULTILINE, /* default options */
-                &errornumber,                                        /* for error number */
-                &erroroffset,                                        /* for error offset */
-                NULL);                                               /* use default compile context */
+                reinterpret_cast<PCRE2_SPTR>(pattern.data()), /* the pattern */
+                PCRE2_ZERO_TERMINATED,                        /* indicates pattern is zero-terminated */
+                PCRE2_UTF | PCRE2_MULTILINE,                  /* default options */
+                &errornumber,                                 /* for error number */
+                &erroroffset,                                 /* for error offset */
+                cc);                                          /* use default compile context */
             if (re == NULL) {
                 PCRE2_UCHAR buffer[256];
                 pcre2_get_error_message(errornumber, buffer, sizeof(buffer));
@@ -41,7 +47,7 @@ namespace regex {
                 re,                                           /* the compiled pattern */
                 PCRE2_INFO_NAMEENTRYSIZE,                     /* size of each entry in the table */
                 &nameEntrySize);                              /* where to put the answer */
-            return new Pcre2Private(re, match_data, nameCount, nameTable, nameEntrySize);
+            return new Pcre2Private(cc, table, re, match_data, nameCount, nameTable, nameEntrySize);
         };
 
         std::expected<bool, std::string> exist(const std::string& subject, PCRE2_SIZE start) {
@@ -309,9 +315,13 @@ namespace regex {
         ~Pcre2Private() {
             pcre2_match_data_free(match_data);
             pcre2_code_free(re);
+            pcre2_maketables_free(nullptr, table);
+            pcre2_compile_context_free(cc);
         };
     private:
-        Pcre2Private(pcre2_code *re, pcre2_match_data *match_data, uint32_t nameCount, PCRE2_SPTR nameTable, uint32_t nameEntrySize) :
+        Pcre2Private(pcre2_compile_context *cc, const uint8_t *table, pcre2_code *re, pcre2_match_data *match_data, uint32_t nameCount, PCRE2_SPTR nameTable, uint32_t nameEntrySize) :
+            cc(cc),
+            table(table),
             re(re),
             match_data(match_data),
             maxBufferSize(256),
@@ -326,6 +336,8 @@ namespace regex {
         // 禁止外部赋值操作
         const Pcre2Private& operator=(const Pcre2Private& single) = delete;
     private:
+        pcre2_compile_context *cc;
+        const uint8_t *table;
         pcre2_code *re;
         pcre2_match_data *match_data;
         PCRE2_SIZE maxBufferSize;

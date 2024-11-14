@@ -21,18 +21,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
         };
     std::string content((std::istreambuf_iterator<char>(inputFile)), std::istreambuf_iterator<char>());
 
-    auto replaceResult = regex::Pcre2Implementation("Owner\\s+(?<struct1>.(?<struct2>.(?<struct3>.(?<struct4>.(?<struct5>.(?<struct6>.))))))\\s+\\{([^\\}]*)\\}").replace(content, "${1}${2}${3}${4}", 5);
-    if (replaceResult) {
-        content = replaceResult.value();
-    } else {
-        std::cerr << replaceResult.error() << std::endl;
-    }
-    replaceResult = regex::Pcre2Implementation("").replace("content", "测试一下", 5);
-    if (replaceResult) {
-    } else {
-        std::cerr << replaceResult.error() << std::endl;
-    }
-    replaceResult = regex::Pcre2Implementation("^package .*").replace(content, "");
+    auto replaceResult = regex::Pcre2Implementation("^package .*").replace(content, "");
     if (replaceResult) {
         content = replaceResult.value();
     } else {
@@ -50,7 +39,34 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
     } else {
         std::cerr << replaceResult.error() << std::endl;
     }
-    auto findResult = regex::Pcre2Implementation("Owner\\s+(?<struct1>.(?<struct2>.(?<struct3>.(?<struct4>.(?<struct5>.(?<struct6>.))))))\\s+\\{([^\\}]*)\\}").find(content);
+    auto findResult = regex::Pcre2Implementation("^((?![\\n\\r])\\s*)\\S+((?![\\n\\r])\\s)+(\\S+)((?![\\n\\r])\\s)+`json:\"(\\S*)\"`").find(content, 1);
+    if (findResult) {
+    } else {
+        std::cerr << findResult.error() << std::endl;
+    }
+    findResult = regex::Pcre2Implementation("^(\\s*)\\S+(\\s)+(\\S+)(\\s)+`json:\"(\\S*)\"`").find(content, 1);
+    if (findResult) {
+    } else {
+        std::cerr << findResult.error() << std::endl;
+    }
+    findResult = regex::Pcre2Implementation("(\\n)^(\\s*).+(\\s)+(.+)(\\s)+`json:\"(.*)\"`").find(content, 10);
+    if (findResult) {
+    } else {
+        std::cerr << findResult.error() << std::endl;
+    }
+    replaceResult = regex::Pcre2Implementation("^((?![\\n\\r])\\s*)\\S+((?![\\n\\r])\\s)+(\\S+)((?![\\n\\r])\\s)+`json:\"(\\S*)\"`").replace(content, "${1}${3} ${5};");
+    if (replaceResult) {
+        content = replaceResult.value();
+    } else {
+        std::cerr << replaceResult.error() << std::endl;
+    }
+    replaceResult = regex::Pcre2Implementation("^((?![\\n\\r])\\s*)\\S+((?![\\n\\r])\\s)+(\\S+)((?![\\n\\r])\\s)+`json:\"(\\S*)\"`").replace(content, "${1}${3} ${5};");
+    if (replaceResult) {
+        content = replaceResult.value();
+    } else {
+        std::cerr << replaceResult.error() << std::endl;
+    }
+    replaceResult = regex::Pcre2Implementation("^((?![\\n\\r])\\s*)\\S+((?![\\n\\r])\\s)+(\\S+)((?![\\n\\r])\\s)+`json:\"(\\S*)\"`").replace(content, "${1}${3} ${5};");
     if (replaceResult) {
         content = replaceResult.value();
     } else {
