@@ -20,7 +20,19 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             inputFile.close();
         };
     std::string content((std::istreambuf_iterator<char>(inputFile)), std::istreambuf_iterator<char>());
-    auto replaceResult = regex::Pcre2Implementation("^package .*").replace(content, "");
+
+    auto replaceResult = regex::Pcre2Implementation("Owner\\s+(?<struct1>.(?<struct2>.(?<struct3>.(?<struct4>.(?<struct5>.(?<struct6>.))))))\\s+\\{([^\\}]*)\\}").replace(content, "${1}${2}${3}${4}", 5);
+    if (replaceResult) {
+        content = replaceResult.value();
+    } else {
+        std::cerr << replaceResult.error() << std::endl;
+    }
+    replaceResult = regex::Pcre2Implementation("").replace("content", "测试一下", 5);
+    if (replaceResult) {
+    } else {
+        std::cerr << replaceResult.error() << std::endl;
+    }
+    replaceResult = regex::Pcre2Implementation("^package .*").replace(content, "");
     if (replaceResult) {
         content = replaceResult.value();
     } else {
