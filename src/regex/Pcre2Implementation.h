@@ -30,8 +30,8 @@ namespace regex {
     private:
         std::expected<bool, std::string> init();
     private:
+        std::string pattern;
         class Pcre2Private;              // 前向声明私有实现类
         std::unique_ptr<Pcre2Private> d; // pimpl指针
-        std::string pattern;
     };
 } // namespace regex
