@@ -1,6 +1,7 @@
 #include "Pcre2Implementation.h"
 #include <cstring>
 #include <format>
+#include <limits>
 #include <pcre2.h>
 namespace regex {
     class Pcre2Implementation::Pcre2Private {
@@ -312,6 +313,138 @@ namespace regex {
             return subject;
         }
 
+        std::expected<std::string, std::string> replace(std::string subject, const std::string& replacementText, std::vector<ReplaceInfo>& replaceInfoList, int times, size_t start) {
+            replaceInfoList.clear();
+            ReplaceInfo replaceInfo;
+            // 启用扩展替换处理，将未知的命名捕获组视为未设置，简单的未设置插入等于空字符串
+            uint32_t defaultOptions = PCRE2_SUBSTITUTE_OVERFLOW_LENGTH | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_UNKNOWN_UNSET | PCRE2_SUBSTITUTE_UNSET_EMPTY;
+            if (times == 0) {
+                times = -1;
+            }
+            uint32_t options = defaultOptions;
+            while (times--) {
+                PCRE2_SIZE bufferSize = maxBufferSize - 1;
+                size_t subjectLength = subject.length();
+                int rc = pcre2_substitute(re,                              // 编译后的正则表达式
+                    reinterpret_cast<PCRE2_SPTR>(subject.data()),          // 要进行替换的原始字符串
+                    subjectLength,                                         // 原始字符串的长度
+                    start,                                                 // 开始替换的位置
+                    options,                                               // 替换选项
+                    match_data,                                            // 匹配数据块，这里传递已构造数据库但不使用
+                    nullptr,                                               // 匹配上下文，这里为nullptr表示不使用
+                    reinterpret_cast<PCRE2_SPTR>(replacementText.data()),  // 替换文本
+                    replacementText.length(),                              // 替换文本的长度
+                    buffer.get(),                                          // 输出缓冲区，用于存放替换后的字符串
+                    &bufferSize                                            // 输出缓冲区大小
+                );
+                /* Matching failed: handle error cases */
+                if (rc <= 0) {
+                    if (rc == PCRE2_ERROR_NOMATCH || rc == 0) {
+                        if (options == defaultOptions) {
+                            break;
+                        }
+                        options = defaultOptions;
+                        start++;                           /* Advance one code unit */
+                        /* advance a whole UTF-8 */
+                        while (start < subject.length()) { /* character. */
+                            if ((subject[start] & 0xc0) != 0x80) {
+                                break;
+                            }
+                            start++;
+                        }
+                        times++;
+                        continue;
+                    }
+                    switch (rc) {
+                        case PCRE2_ERROR_NOMEMORY: {
+                            break;
+                        }
+                        default: {
+                            pcre2_get_error_message(rc, buffer.get(), maxBufferSize);
+                            return std::unexpected(std::format("PCRE2 matching failed: {}", (char *)buffer.get()));
+                        }
+                    }
+                }
+                if (bufferSize >= maxBufferSize) {
+                    maxBufferSize = bufferSize + 1;
+                    buffer = std::make_unique<PCRE2_UCHAR[]>(maxBufferSize);
+                    rc = pcre2_substitute(re,                                 // 编译后的正则表达式
+                        reinterpret_cast<PCRE2_SPTR>(subject.data()),         // 要进行替换的原始字符串
+                        subjectLength,                                        // 原始字符串的长度
+                        start,                                                // 开始替换的位置
+                        options,                                              // 替换选项
+                        nullptr,                                              // 匹配数据块，这里为nullptr表示不使用
+                        nullptr,                                              // 匹配上下文，这里为nullptr表示不使用
+                        reinterpret_cast<PCRE2_SPTR>(replacementText.data()), // 替换文本
+                        replacementText.length(),                             // 替换文本的长度
+                        buffer.get(),                                         // 输出缓冲区，用于存放替换后的字符串
+                        &bufferSize                                           // 输出缓冲区大小
+                    );
+                    /* Matching failed: handle error cases */
+                    if (rc <= 0) {
+                        if (rc == PCRE2_ERROR_NOMATCH || rc == 0) {
+                            if (options == defaultOptions) {
+                                break;
+                            }
+                            options = defaultOptions;
+                            start++;                           /* Advance one code unit */
+                            /* advance a whole UTF-8 */
+                            while (start < subject.length()) { /* character. */
+                                if ((subject[start] & 0xc0) != 0x80) {
+                                    break;
+                                }
+                                start++;
+                            }
+                            times++;
+                            continue;
+                        }
+                        switch (rc) {
+                            default: {
+                                pcre2_get_error_message(rc, buffer.get(), maxBufferSize);
+                                return std::unexpected(std::format("PCRE2 matching failed: {}", (char *)buffer.get()));
+                            }
+                        }
+                    }
+                }
+                replaceInfo.group.clear();
+                replaceInfo.namedGroup.clear();
+                for (int i = 0; i < ovectorCount; i++) {
+                    replaceInfo.group.push_back({
+                        ovector[2 * i],
+                        ovector[2 * i + 1],
+                        ovector[2 * i] != std::numeric_limits<size_t>::max() ? subject.substr(ovector[2 * i], ovector[2 * i + 1] - ovector[2 * i]) : ""
+                    });
+                }
+                if (nameCount > 0) {
+                    /* Now we can scan the table and, for each entry, print the number, the name,
+                       and the substring itself. In the 8-bit library the number is held in two
+                       bytes, most significant first. */
+
+                    PCRE2_SPTR tabptr = nameTable;
+                    for (uint32_t i = 0; i < nameCount; i++) {
+                        size_t n = ((size_t)(tabptr[0]) << 8) | tabptr[1];
+                        replaceInfo.namedGroup.emplace(std::string(reinterpret_cast<const char *>(tabptr + 2)), n);
+                        tabptr += nameEntrySize;
+                    }
+                }
+                replaceInfoList.push_back(replaceInfo);
+                options = defaultOptions;
+                subject = reinterpret_cast<char *>(buffer.get());
+                /* If the previous match was for an empty string, we are finished if we are
+                   at the end of the subject. Otherwise, arrange to run another match at the
+                   same point to see if a non-empty match can be found. */
+
+                if (ovector[0] == ovector[1]) {
+                    if (ovector[0] == subject.length()) {
+                        break;
+                    }
+                    options = defaultOptions | PCRE2_NOTEMPTY_ATSTART | PCRE2_ANCHORED;
+                }
+                start = ovector[1] + subject.length() - subjectLength;
+            }
+            return subject;
+        }
+
         ~Pcre2Private() {
             pcre2_match_data_free(match_data);
             pcre2_code_free(re);
@@ -329,7 +462,8 @@ namespace regex {
             nameCount(nameCount),
             nameTable(nameTable),
             nameEntrySize(nameEntrySize),
-            ovector(pcre2_get_ovector_pointer(match_data)) {
+            ovector(pcre2_get_ovector_pointer(match_data)),
+            ovectorCount(pcre2_get_ovector_count(match_data)) {
         };
         // 禁止外部拷贝构造
         Pcre2Private(const Pcre2Private& single) = delete;
@@ -346,6 +480,7 @@ namespace regex {
         PCRE2_SPTR nameTable;
         uint32_t nameEntrySize;
         PCRE2_SIZE *ovector;
+        uint32_t ovectorCount;
     };
 } // namespace regex
 
@@ -375,6 +510,14 @@ std::expected<std::string, std::string> regex::Pcre2Implementation::replace(cons
     auto result = init();
     if (result.value_or(false)) {
         return d->replace(originalText, replacementText, times, start);
+    }
+    return std::unexpected(result.error_or("初始化错误！"));
+}
+
+std::expected<std::string, std::string> regex::Pcre2Implementation::replace(const std::string& originalText, const std::string& replacementText, std::vector<ReplaceInfo>& replaceInfoList, int times, size_t start) {
+    auto result = init();
+    if (result.value_or(false)) {
+        return d->replace(originalText, replacementText, replaceInfoList, times, start);
     }
     return std::unexpected(result.error_or("初始化错误！"));
 }

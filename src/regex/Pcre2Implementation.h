@@ -8,17 +8,22 @@
 namespace regex {
     class Pcre2Implementation {
     public:
+        class StringWithPosition {
+        public:
+            StringWithPosition(size_t start, size_t end, std::string_view text) : start(start), end(end), text(text) {
+            }
+
+            size_t start;
+            size_t end;
+            std::string text;
+        };
         class FindInfo {
         public:
-            class StringWithPosition {
-            public:
-                StringWithPosition(size_t start, size_t end, std::string_view text) : start(start), end(end), text(text) {
-                }
-
-                size_t start;
-                size_t end;
-                std::string text;
-            };
+            std::vector<StringWithPosition> group;
+            std::unordered_map<std::string, size_t> namedGroup;
+        };
+        class ReplaceInfo {
+        public:
             std::vector<StringWithPosition> group;
             std::unordered_map<std::string, size_t> namedGroup;
         };
@@ -27,6 +32,7 @@ namespace regex {
         std::expected<bool, std::string> exist(const std::string& text, size_t start = 0);
         std::expected<std::vector<FindInfo>, std::string> find(const std::string& text, int times = 0, size_t start = 0);
         std::expected<std::string, std::string> replace(const std::string& originalText, const std::string& replacementText, int times = 0, size_t start = 0);
+        std::expected<std::string, std::string> replace(const std::string& originalText, const std::string& replacementText, std::vector<ReplaceInfo>& replaceInfoList, int times = 0, size_t start = 0);
     private:
         std::expected<bool, std::string> init();
     private:
