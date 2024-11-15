@@ -20,7 +20,13 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             inputFile.close();
         };
     std::string content((std::istreambuf_iterator<char>(inputFile)), std::istreambuf_iterator<char>());
-    std::unordered_map<std::string, std::string> structMap;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> structMap;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> eventMap;
+    auto findResult = regex::Pcre2Implementation("").find(content, 1);
+    if (findResult) {
+    } else {
+        std::cerr << findResult.error() << std::endl;
+    }
     auto replaceResult = regex::Pcre2Implementation("(\\n)\\r").replace(content, "$1");
     if (replaceResult) {
         content = replaceResult.value();
@@ -75,14 +81,29 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
     auto extractOptionalStructRegex = regex::Pcre2Implementation("^(\\s*)\\S+\\s+\\*struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
     auto extractOutputStructRegex = regex::Pcre2Implementation("^(\\s*)Output\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*$");
     auto extractPackageStructRegex = regex::Pcre2Implementation("^(\\s*)Package\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*$");
+    auto extractInputsStructRegex = regex::Pcre2Implementation("^(\\s*)Inputs\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*$");
+    auto structFieldRegex = regex::Pcre2Implementation("^\\s*(?<type>\\S+)\\s*(?<name>\\S+);\\s*$");
+    auto decodeFieldFunction = [&structFieldRegex](const std::string& name, const std::string& body, std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& structFieldMap) {
+            auto [iterator, success] = structFieldMap.try_emplace(name, std::unordered_map<std::string, std::string>());
+            auto& [nameKey, fieldMap] = *iterator;
+            auto findResult = structFieldRegex.find(body);
+            if (findResult) {
+                for (auto& findInfo : findResult.value()) {
+                    auto& typeString = findInfo.group[findInfo.namedGroup["type"]].text;
+                    fieldMap.try_emplace(typeString, findInfo.group[findInfo.namedGroup["name"]].text);
+                }
+            } else {
+                std::cerr << findResult.error() << std::endl;
+            }
+        };
     bool running = false;
     do {
         running = false;
         replaceResult = extractStructRegex.replace(content, "${1}${3} ${3};", replaceInfoList);
         if (replaceResult) {
             content = replaceResult.value();
-            for (auto&replaceInfo : replaceInfoList) {
-                structMap.emplace(replaceInfo.group[replaceInfo.namedGroup["name"]].text, replaceInfo.group[replaceInfo.namedGroup["body"]].text);
+            for (auto& replaceInfo : replaceInfoList) {
+                decodeFieldFunction(replaceInfo.group[replaceInfo.namedGroup["name"]].text, replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
             }
         } else {
             std::cerr << replaceResult.error() << std::endl;
@@ -92,7 +113,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
         if (replaceResult) {
             content = replaceResult.value();
             for (auto& replaceInfo : replaceInfoList) {
-                structMap.emplace(replaceInfo.group[replaceInfo.namedGroup["name"]].text, replaceInfo.group[replaceInfo.namedGroup["body"]].text);
+                decodeFieldFunction(replaceInfo.group[replaceInfo.namedGroup["name"]].text, replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
             }
         } else {
             std::cerr << replaceResult.error() << std::endl;
@@ -102,33 +123,51 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
         if (replaceResult) {
             content = replaceResult.value();
             for (auto& replaceInfo : replaceInfoList) {
-                structMap.emplace(replaceInfo.group[replaceInfo.namedGroup["name"]].text, replaceInfo.group[replaceInfo.namedGroup["body"]].text);
+                decodeFieldFunction(replaceInfo.group[replaceInfo.namedGroup["name"]].text, replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
             }
         } else {
             std::cerr << replaceResult.error() << std::endl;
         }
         running = running || replaceInfoList.size() > 0;
-        replaceResult = extractOutputStructRegex.replace(content, "${1}std::optional<output> output;", replaceInfoList);
+        replaceResult = extractOutputStructRegex.replace(content, "${1}output output;", replaceInfoList);
         if (replaceResult) {
             content = replaceResult.value();
             for (auto& replaceInfo : replaceInfoList) {
-                structMap.emplace("output", replaceInfo.group[replaceInfo.namedGroup["body"]].text);
+                decodeFieldFunction("output", replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
             }
         } else {
             std::cerr << replaceResult.error() << std::endl;
         }
         running = running || replaceInfoList.size() > 0;
-        replaceResult = extractPackageStructRegex.replace(content, "${1}std::optional<package> package;", replaceInfoList);
+        replaceResult = extractPackageStructRegex.replace(content, "${1}package package;", replaceInfoList);
         if (replaceResult) {
             content = replaceResult.value();
             for (auto& replaceInfo : replaceInfoList) {
-                structMap.emplace("package", replaceInfo.group[replaceInfo.namedGroup["body"]].text);
+                decodeFieldFunction("package", replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
+            }
+        } else {
+            std::cerr << replaceResult.error() << std::endl;
+        }
+        running = running || replaceInfoList.size() > 0;
+        replaceResult = extractInputsStructRegex.replace(content, "${1}inputs inputs;", replaceInfoList);
+        if (replaceResult) {
+            content = replaceResult.value();
+            for (auto& replaceInfo : replaceInfoList) {
+                decodeFieldFunction("inputs", replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
             }
         } else {
             std::cerr << replaceResult.error() << std::endl;
         }
         running = running || replaceInfoList.size() > 0;
     } while (running);
+    findResult = regex::Pcre2Implementation("\\s*type\\s+(?<name>\\S+)\\s+struct\\s*\\{(?<body>[^\\{\\}]+)\\}").find(content);
+    if (findResult) {
+        for (auto& findInfo : findResult.value()) {
+            decodeFieldFunction(findInfo.group[findInfo.namedGroup["name"]].text, findInfo.group[findInfo.namedGroup["body"]].text, eventMap);
+        }
+    } else {
+        std::cerr << findResult.error() << std::endl;
+    }
     // replaceResult = regex::Pcre2Implementation("\\*(\\S+)(\\s+)(\\s+;)").replace(content, "std::optional<${1}>${2}${3}");
     // if (replaceResult) {
     // content = replaceResult.value();
