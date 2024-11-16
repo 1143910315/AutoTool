@@ -10,6 +10,7 @@
 #include <ranges>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 
 std::string github::webhook::Webhook::transform(std::string fileName) {
     // 创建ifstream对象并打开文件
@@ -25,6 +26,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
     std::string content((std::istreambuf_iterator<char>(inputFile)), std::istreambuf_iterator<char>());
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> structMap;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> eventMap;
+    std::unordered_set<std::string> hrefFieldSet;
     auto findResult = regex::Pcre2Implementation("").find(content, 1);
     if (findResult) {
     } else {
@@ -90,18 +92,22 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
     auto goOptionalTypeRegex = regex::Pcre2Implementation("(\\S*)\\*(\\S+)");
     auto goArrayTypeRegex = regex::Pcre2Implementation("\\[\\](\\S+)");
     auto decodeFieldFunction = [&](const std::string& name, const std::string& body, std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& structFieldMap) {
-            auto [iterator, success] = structFieldMap.try_emplace(name, std::unordered_map<std::string, std::string>());
-            auto& [nameKey, fieldMap] = *iterator;
             auto findResult = structFieldRegex.find(body);
             if (findResult) {
-                for (auto& findInfo : findResult.value()) {
-                    auto& typeString = findInfo.group[findInfo.namedGroup["type"]].text;
-                    typeString = goStringTypeRegex.replace(typeString, "std::string").value_or(typeString);
-                    typeString = goTimeTypeRegex.replace(typeString, "std::string").value_or(typeString);
-                    typeString = goFloat64TypeRegex.replace(typeString, "double").value_or(typeString);
-                    typeString = goOptionalTypeRegex.replace(typeString, "std::optional<${1}${2}>").value_or(typeString);
-                    typeString = goArrayTypeRegex.replace(typeString, "std::vector<${1}>").value_or(typeString);
-                    fieldMap.try_emplace(findInfo.group[findInfo.namedGroup["name"]].text, typeString);
+                if (findResult.value().size() == 1 && findResult.value()[0].group[findResult.value()[0].namedGroup["name"]].text == "href") {
+                    hrefFieldSet.emplace(name);
+                } else {
+                    auto [iterator, success] = structFieldMap.try_emplace(name, std::unordered_map<std::string, std::string>());
+                    auto& [nameKey, fieldMap] = *iterator;
+                    for (auto& findInfo : findResult.value()) {
+                        auto& typeString = findInfo.group[findInfo.namedGroup["type"]].text;
+                        typeString = goStringTypeRegex.replace(typeString, "std::string").value_or(typeString);
+                        typeString = goTimeTypeRegex.replace(typeString, "std::string").value_or(typeString);
+                        typeString = goFloat64TypeRegex.replace(typeString, "double").value_or(typeString);
+                        typeString = goOptionalTypeRegex.replace(typeString, "std::optional<${1}${2}>").value_or(typeString);
+                        typeString = goArrayTypeRegex.replace(typeString, "std::vector<${1}>").value_or(typeString);
+                        fieldMap.try_emplace(findInfo.group[findInfo.namedGroup["name"]].text, typeString);
+                    }
                 }
             } else {
                 std::cerr << findResult.error() << std::endl;
@@ -248,9 +254,13 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                     }
                 }
             }
+            std::string suffix = "";
+            if (structName == "_links") {
+                suffix = "_url";
+            }
             for (auto& [typeName, type] : typeNameMap) {
                 if (type == 0) {
-                    outFile << std::format("#include \"{}.h\"\n", typeName);
+                    outFile << std::format("#include \"{}{}.h\"\n", typeName, suffix);
                 } else {
                     outFile << std::format("#include <{}>\n", typeName);
                 }
@@ -265,11 +275,11 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                     }
                     auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", replaceInfoList).value_or(typeName);
                     if (structMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
+                        outFile << std::format("    {}{} {}{};\n", typeName, suffix, prefix, fieldName);
                     } else if (eventMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Event::"), prefix, fieldName);
+                        outFile << std::format("    {}{} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Event::"), suffix, prefix, fieldName);
                     } else {
-                        outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
+                        outFile << std::format("    {}{} {}{};\n", typeName, suffix, prefix, fieldName);
                     }
                 }
                 outFile << "};\n";
@@ -397,6 +407,24 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                 }
                 outFile << "    _ASSERT_EXPR(t.size() == 0, \"Key size must be 0\");\n}\n";
             });
+            // 关闭文件
+            outFile.close();
+        }
+    }
+    for (auto& structName : hrefFieldSet) {
+        // 创建或打开文件用于写入
+        std::ofstream outFile(std::format("github/structure/{}_url.h", structName));
+        // 检查文件是否成功打开
+        if (outFile.is_open()) {
+            outFile << "#pragma once\n#include \"Global.h\"\n#include \"utils/JsonUtils.h\"\n\nnamespace SkyDreamBeta::Network::Github::Structure\n{\nstruct " << structName << "_url\n{\n    std::string href;\n};\n}\nnamespace nlohmann\n{\nvoid to_json(json& j, const SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d);\nvoid from_json(const json& j, SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d);\n}\n";
+            // 关闭文件
+            outFile.close();
+        }
+        // 创建或打开文件用于写入
+        outFile = std::ofstream(std::format("github/structure/{}_url.cpp", structName));
+        // 检查文件是否成功打开
+        if (outFile.is_open()) {
+            outFile << "#include \"" << structName << "_url.h\"\nnamespace nlohmann\n{\nvoid to_json(json& j, const SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d)\n{\n    j = json {\n        { \"href\", d.href },\n    };\n}\nvoid from_json(const json& j, SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d)\n{\n    json t = j;\n    SkyDreamBeta::JsonUtils::getAndRemove(t, \"href\", d.href);\n    _ASSERT_EXPR(t.size() == 0, \"Key size must be 0\");\n}\n}\n";
             // 关闭文件
             outFile.close();
         }
