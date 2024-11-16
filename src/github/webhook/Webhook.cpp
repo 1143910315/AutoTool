@@ -240,6 +240,8 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                     typeNameMap.try_emplace(std::format("{}", unwarpTypeName), 0);
                 } else if (eventMap.contains(unwarpTypeName)) {
                     typeNameMap.try_emplace(std::format("../event/{}", unwarpTypeName), 0);
+                } else if (hrefFieldSet.contains(unwarpTypeName)) {
+                    typeNameMap.try_emplace(std::format("{}", unwarpTypeName), 0);
                 }
                 if (!existOptional) {
                     if (optionalTypeRegex.exist(typeName).value_or(false)) {
