@@ -1,10 +1,12 @@
 #include "regex/Pcre2Implementation.h"
 #include "utils/Defer.hpp"
 #include "Webhook.h"
+#include <cctype>
 #include <format>
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <ranges>
 #include <sstream>
 #include <unordered_map>
 
@@ -79,17 +81,23 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
     auto extractStructRegex = regex::Pcre2Implementation("^(\\s*)\\S+\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
     auto extractArrayStructRegex = regex::Pcre2Implementation("^(\\s*)\\S+\\s+\\[\\]struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
     auto extractOptionalStructRegex = regex::Pcre2Implementation("^(\\s*)\\S+\\s+\\*struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
-    auto extractOutputStructRegex = regex::Pcre2Implementation("^(\\s*)Output\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*$");
-    auto extractPackageStructRegex = regex::Pcre2Implementation("^(\\s*)Package\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*$");
-    auto extractInputsStructRegex = regex::Pcre2Implementation("^(\\s*)Inputs\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*$");
+    auto extractNamedStructRegex = regex::Pcre2Implementation("^(\\s*)(?<name>\\S+?)\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*$");
     auto structFieldRegex = regex::Pcre2Implementation("^\\s*(?<type>\\S+)\\s*(?<name>\\S+);\\s*$");
-    auto decodeFieldFunction = [&structFieldRegex](const std::string& name, const std::string& body, std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& structFieldMap) {
+    auto stringTypeRegex = regex::Pcre2Implementation("string");
+    auto timeTypeRegex = regex::Pcre2Implementation("time\\.Time");
+    auto optionalTypeRegex = regex::Pcre2Implementation("\\*(\\S+)");
+    auto arrayTypeRegex = regex::Pcre2Implementation("\\[\\](\\S+)");
+    auto decodeFieldFunction = [&](const std::string& name, const std::string& body, std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& structFieldMap) {
             auto [iterator, success] = structFieldMap.try_emplace(name, std::unordered_map<std::string, std::string>());
             auto& [nameKey, fieldMap] = *iterator;
             auto findResult = structFieldRegex.find(body);
             if (findResult) {
                 for (auto& findInfo : findResult.value()) {
                     auto& typeString = findInfo.group[findInfo.namedGroup["type"]].text;
+                    typeString = stringTypeRegex.replace(typeString, "std::string").value_or(typeString);
+                    typeString = timeTypeRegex.replace(typeString, "std::string").value_or(typeString);
+                    typeString = optionalTypeRegex.replace(typeString, "std::optional<${1}>").value_or(typeString);
+                    typeString = arrayTypeRegex.replace(typeString, "std::vector<${1}>").value_or(typeString);
                     fieldMap.try_emplace(typeString, findInfo.group[findInfo.namedGroup["name"]].text);
                 }
             } else {
@@ -129,36 +137,20 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             std::cerr << replaceResult.error() << std::endl;
         }
         running = running || replaceInfoList.size() > 0;
-        replaceResult = extractOutputStructRegex.replace(content, "${1}output output;", replaceInfoList);
-        if (replaceResult) {
-            content = replaceResult.value();
-            for (auto& replaceInfo : replaceInfoList) {
-                decodeFieldFunction("output", replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
+        findResult = extractNamedStructRegex.find(content);
+        if (findResult) {
+            running = running || findResult.value().size() > 0;
+            for (auto& findInfo : findResult.value() | std::views::reverse) {
+                auto& lowerString = findInfo.group[findInfo.namedGroup["name"]].text;
+                for (char& c : lowerString) {  // 遍历字符串中的每个字符
+                    c = (char)std::tolower(c); // 将字符转换为小写
+                }
+                content.replace(findInfo.group[0].start, findInfo.group[0].text.length(), std::format("{}{} {};", findInfo.group[1].text, lowerString, lowerString));
+                decodeFieldFunction(lowerString, findInfo.group[findInfo.namedGroup["body"]].text, structMap);
             }
         } else {
-            std::cerr << replaceResult.error() << std::endl;
+            std::cerr << findResult.error() << std::endl;
         }
-        running = running || replaceInfoList.size() > 0;
-        replaceResult = extractPackageStructRegex.replace(content, "${1}package package;", replaceInfoList);
-        if (replaceResult) {
-            content = replaceResult.value();
-            for (auto& replaceInfo : replaceInfoList) {
-                decodeFieldFunction("package", replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
-            }
-        } else {
-            std::cerr << replaceResult.error() << std::endl;
-        }
-        running = running || replaceInfoList.size() > 0;
-        replaceResult = extractInputsStructRegex.replace(content, "${1}inputs inputs;", replaceInfoList);
-        if (replaceResult) {
-            content = replaceResult.value();
-            for (auto& replaceInfo : replaceInfoList) {
-                decodeFieldFunction("inputs", replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
-            }
-        } else {
-            std::cerr << replaceResult.error() << std::endl;
-        }
-        running = running || replaceInfoList.size() > 0;
     } while (running);
     findResult = regex::Pcre2Implementation("\\s*type\\s+(?<name>\\S+)\\s+struct\\s*\\{(?<body>[^\\{\\}]+)\\}").find(content);
     if (findResult) {
