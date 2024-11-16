@@ -86,6 +86,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
     auto structFieldRegex = regex::Pcre2Implementation("^\\s*(?<type>\\S+)\\s*(?<name>\\S+);\\s*$");
     auto goStringTypeRegex = regex::Pcre2Implementation("string");
     auto goTimeTypeRegex = regex::Pcre2Implementation("time\\.Time");
+    auto goFloat64TypeRegex = regex::Pcre2Implementation("float64");
     auto goOptionalTypeRegex = regex::Pcre2Implementation("(\\S*)\\*(\\S+)");
     auto goArrayTypeRegex = regex::Pcre2Implementation("\\[\\](\\S+)");
     auto decodeFieldFunction = [&](const std::string& name, const std::string& body, std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& structFieldMap) {
@@ -97,6 +98,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                     auto& typeString = findInfo.group[findInfo.namedGroup["type"]].text;
                     typeString = goStringTypeRegex.replace(typeString, "std::string").value_or(typeString);
                     typeString = goTimeTypeRegex.replace(typeString, "std::string").value_or(typeString);
+                    typeString = goFloat64TypeRegex.replace(typeString, "double").value_or(typeString);
                     typeString = goOptionalTypeRegex.replace(typeString, "std::optional<${1}${2}>").value_or(typeString);
                     typeString = goArrayTypeRegex.replace(typeString, "std::vector<${1}>").value_or(typeString);
                     fieldMap.try_emplace(findInfo.group[findInfo.namedGroup["name"]].text, typeString);
@@ -263,7 +265,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                     }
                     auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", replaceInfoList).value_or(typeName);
                     if (structMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Structure::"), prefix, fieldName);
+                        outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
                     } else if (eventMap.contains(unwarpTypeName)) {
                         outFile << std::format("    {} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Event::"), prefix, fieldName);
                     } else {
@@ -356,7 +358,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                     if (structMap.contains(unwarpTypeName)) {
                         outFile << std::format("    {} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Structure::"), prefix, fieldName);
                     } else if (eventMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Event::"), prefix, fieldName);
+                        outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
                     } else {
                         outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
                     }
