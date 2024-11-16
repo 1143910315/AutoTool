@@ -208,7 +208,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             f();
             outFile << "}\n";
         };
-    auto unwarpTypeRegex = regex::Pcre2Implementation("^(\\S*<)?(\\S*)?(>)?$");
+    auto unwarpTypeRegex = regex::Pcre2Implementation("^(\\S*<)?(\\S*?)(>*)?$");
     auto optionalTypeRegex = regex::Pcre2Implementation("std::optional");
     auto vectorTypeRegex = regex::Pcre2Implementation("std::vector");
     std::string eventNamespaceString = "SkyDreamBeta::Network::Github::Event";
@@ -257,7 +257,14 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             wirteNamespace(outFile, structureNamespaceString, [&]() {
                 outFile << "struct " << structName << "\n{\n";
                 for (auto& [fieldName, typeName] : fieldMap) {
-                    outFile << std::format("    {} {};\n", typeName, fieldName);
+                    auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", replaceInfoList).value_or(typeName);
+                    if (structMap.contains(unwarpTypeName)) {
+                        outFile << std::format("    {} {};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Structure::"), fieldName);
+                    } else if (eventMap.contains(unwarpTypeName)) {
+                        outFile << std::format("    {} {};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Event::"), fieldName);
+                    } else {
+                        outFile << std::format("    {} {};\n", typeName, fieldName);
+                    }
                 }
                 outFile << "};\n";
             });
@@ -329,7 +336,14 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             wirteNamespace(outFile, eventNamespaceString, [&]() {
                 outFile << "struct " << structName << "\n{\n";
                 for (auto& [fieldName, typeName] : fieldMap) {
-                    outFile << std::format("    {} {};\n", typeName, fieldName);
+                    auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", replaceInfoList).value_or(typeName);
+                    if (structMap.contains(unwarpTypeName)) {
+                        outFile << std::format("    {} {};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Structure::"), fieldName);
+                    } else if (eventMap.contains(unwarpTypeName)) {
+                        outFile << std::format("    {} {};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Event::"), fieldName);
+                    } else {
+                        outFile << std::format("    {} {};\n", typeName, fieldName);
+                    }
                 }
                 outFile << "};\n";
             });
