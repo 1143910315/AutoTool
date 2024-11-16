@@ -257,13 +257,17 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             wirteNamespace(outFile, structureNamespaceString, [&]() {
                 outFile << "struct " << structName << "\n{\n";
                 for (auto& [fieldName, typeName] : fieldMap) {
+                    std::string prefix = "";
+                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+                        prefix = "_";
+                    }
                     auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", replaceInfoList).value_or(typeName);
                     if (structMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {} {};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Structure::"), fieldName);
+                        outFile << std::format("    {} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Structure::"), prefix, fieldName);
                     } else if (eventMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {} {};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Event::"), fieldName);
+                        outFile << std::format("    {} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Event::"), prefix, fieldName);
                     } else {
-                        outFile << std::format("    {} {};\n", typeName, fieldName);
+                        outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
                     }
                 }
                 outFile << "};\n";
@@ -283,12 +287,20 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             wirteNamespace(outFile, "nlohmann", [&]() {
                 outFile << "void to_json(json& j, const " << structureNamespaceString << "::" << structName << "& d)\n{\n    j = json {\n";
                 for (auto& [fieldName, typeName] : fieldMap) {
-                    outFile << "        {" << std::format(" \"{}\", d.{} ", fieldName, fieldName) << "},\n";
+                    std::string prefix = "";
+                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+                        prefix = "_";
+                    }
+                    outFile << "        {" << std::format(" \"{}\", d.{}{} ", fieldName, prefix, fieldName) << "},\n";
                 }
                 outFile << "    };\n}\n";
                 outFile << "void from_json(const json& j, " << structureNamespaceString << "::" << structName << "& d)\n{\n    json t = j;\n";
                 for (auto& [fieldName, typeName] : fieldMap) {
-                    outFile << std::format("    SkyDreamBeta::JsonUtils::getAndRemove(t, \"{}\", d.{});\n", fieldName, fieldName);
+                    std::string prefix = "";
+                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+                        prefix = "_";
+                    }
+                    outFile << std::format("    SkyDreamBeta::JsonUtils::getAndRemove(t, \"{}\", d.{}{});\n", fieldName, prefix, fieldName);
                 }
                 outFile << "    _ASSERT_EXPR(t.size() == 0, \"Key size must be 0\");\n}\n";
             });
@@ -336,13 +348,17 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             wirteNamespace(outFile, eventNamespaceString, [&]() {
                 outFile << "struct " << structName << "\n{\n";
                 for (auto& [fieldName, typeName] : fieldMap) {
+                    std::string prefix = "";
+                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+                        prefix = "_";
+                    }
                     auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", replaceInfoList).value_or(typeName);
                     if (structMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {} {};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Structure::"), fieldName);
+                        outFile << std::format("    {} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Structure::"), prefix, fieldName);
                     } else if (eventMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {} {};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Event::"), fieldName);
+                        outFile << std::format("    {} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Event::"), prefix, fieldName);
                     } else {
-                        outFile << std::format("    {} {};\n", typeName, fieldName);
+                        outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
                     }
                 }
                 outFile << "};\n";
@@ -362,12 +378,20 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             wirteNamespace(outFile, "nlohmann", [&]() {
                 outFile << "void to_json(json& j, const " << eventNamespaceString << "::" << structName << "& d)\n{\n    j = json {\n";
                 for (auto& [fieldName, typeName] : fieldMap) {
-                    outFile << "        {" << std::format(" \"{}\", d.{} ", fieldName, fieldName) << "},\n";
+                    std::string prefix = "";
+                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+                        prefix = "_";
+                    }
+                    outFile << "        {" << std::format(" \"{}\", d.{}{} ", fieldName, prefix, fieldName) << "},\n";
                 }
                 outFile << "    };\n}\n";
                 outFile << "void from_json(const json& j, " << eventNamespaceString << "::" << structName << "& d)\n{\n    json t = j;\n";
                 for (auto& [fieldName, typeName] : fieldMap) {
-                    outFile << std::format("    SkyDreamBeta::JsonUtils::getAndRemove(t, \"{}\", d.{});\n", fieldName, fieldName);
+                    std::string prefix = "";
+                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+                        prefix = "_";
+                    }
+                    outFile << std::format("    SkyDreamBeta::JsonUtils::getAndRemove(t, \"{}\", d.{}{});\n", fieldName, prefix, fieldName);
                 }
                 outFile << "    _ASSERT_EXPR(t.size() == 0, \"Key size must be 0\");\n}\n";
             });
