@@ -408,7 +408,7 @@ namespace regex {
                 }
                 replaceInfo.group.clear();
                 replaceInfo.namedGroup.clear();
-                for (int i = 0; i < ovectorCount; i++) {
+                for (uint32_t i = 0; i < ovectorCount; i++) {
                     replaceInfo.group.push_back({
                         ovector[2 * i],
                         ovector[2 * i + 1],
