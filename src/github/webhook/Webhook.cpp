@@ -222,7 +222,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
         std::ofstream outFile(std::format("github/structure/{}.h", structName));
         // 检查文件是否成功打开
         if (outFile.is_open()) {
-            outFile << "#pragma once\n#include \"Global.h\"\n";
+            outFile << "#pragma once\n#include \"Global.h\"\n#include \"utils/JsonUtils.h\"\n";
             typeNameMap.clear();
             bool existOptional = false;
             bool existVector = false;
@@ -301,7 +301,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
         std::ofstream outFile(std::format("github/event/{}.h", structName));
         // 检查文件是否成功打开
         if (outFile.is_open()) {
-            outFile << "#pragma once\n#include \"Global.h\"\n";
+            outFile << "#pragma once\n#include \"Global.h\"\n#include \"utils/JsonUtils.h\"\n";
             typeNameMap.clear();
             bool existOptional = false;
             bool existVector = false;
