@@ -89,6 +89,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
     auto goStringTypeRegex = regex::Pcre2Implementation("string");
     auto goTimeTypeRegex = regex::Pcre2Implementation("time\\.Time");
     auto goFloat64TypeRegex = regex::Pcre2Implementation("float64");
+    auto goUint32TypeRegex = regex::Pcre2Implementation("uint32");
     auto goOptionalTypeRegex = regex::Pcre2Implementation("(\\S*)\\*(\\S+)");
     auto goArrayTypeRegex = regex::Pcre2Implementation("\\[\\](\\S+)");
     auto decodeFieldFunction = [&](const std::string& name, const std::string& body, std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& structFieldMap) {
@@ -104,6 +105,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                         typeString = goStringTypeRegex.replace(typeString, "std::string").value_or(typeString);
                         typeString = goTimeTypeRegex.replace(typeString, "std::string").value_or(typeString);
                         typeString = goFloat64TypeRegex.replace(typeString, "double").value_or(typeString);
+                        typeString = goUint32TypeRegex.replace(typeString, "uint").value_or(typeString);
                         typeString = goOptionalTypeRegex.replace(typeString, "std::optional<${1}${2}>").value_or(typeString);
                         typeString = goArrayTypeRegex.replace(typeString, "std::vector<${1}>").value_or(typeString);
                         fieldMap.try_emplace(findInfo.group[findInfo.namedGroup["name"]].text, typeString);
