@@ -398,12 +398,8 @@ namespace regex {
                             times++;
                             continue;
                         }
-                        switch (rc) {
-                            default: {
-                                pcre2_get_error_message(rc, buffer.get(), maxBufferSize);
-                                return std::unexpected(std::format("PCRE2 matching failed: {}", (char *)buffer.get()));
-                            }
-                        }
+                        pcre2_get_error_message(rc, buffer.get(), maxBufferSize);
+                        return std::unexpected(std::format("PCRE2 matching failed: {}", (char *)buffer.get()));
                     }
                 }
                 replaceInfo.group.clear();
