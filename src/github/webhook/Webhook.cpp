@@ -84,10 +84,10 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
     auto extractOptionalStructRegex = regex::Pcre2Implementation("^(\\s*)\\S+\\s+\\*struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
     auto extractNamedStructRegex = regex::Pcre2Implementation("^(\\s*)(?<name>\\S+?)\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*$");
     auto structFieldRegex = regex::Pcre2Implementation("^\\s*(?<type>\\S+)\\s*(?<name>\\S+);\\s*$");
-    auto stringTypeRegex = regex::Pcre2Implementation("string");
-    auto timeTypeRegex = regex::Pcre2Implementation("time\\.Time");
-    auto optionalTypeRegex = regex::Pcre2Implementation("\\*(\\S+)");
-    auto arrayTypeRegex = regex::Pcre2Implementation("\\[\\](\\S+)");
+    auto goStringTypeRegex = regex::Pcre2Implementation("string");
+    auto goTimeTypeRegex = regex::Pcre2Implementation("time\\.Time");
+    auto goOptionalTypeRegex = regex::Pcre2Implementation("(\\S*)\\*(\\S+)");
+    auto goArrayTypeRegex = regex::Pcre2Implementation("\\[\\](\\S+)");
     auto decodeFieldFunction = [&](const std::string& name, const std::string& body, std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& structFieldMap) {
             auto [iterator, success] = structFieldMap.try_emplace(name, std::unordered_map<std::string, std::string>());
             auto& [nameKey, fieldMap] = *iterator;
@@ -95,10 +95,10 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             if (findResult) {
                 for (auto& findInfo : findResult.value()) {
                     auto& typeString = findInfo.group[findInfo.namedGroup["type"]].text;
-                    typeString = stringTypeRegex.replace(typeString, "std::string").value_or(typeString);
-                    typeString = timeTypeRegex.replace(typeString, "std::string").value_or(typeString);
-                    typeString = optionalTypeRegex.replace(typeString, "std::optional<${1}>").value_or(typeString);
-                    typeString = arrayTypeRegex.replace(typeString, "std::vector<${1}>").value_or(typeString);
+                    typeString = goStringTypeRegex.replace(typeString, "std::string").value_or(typeString);
+                    typeString = goTimeTypeRegex.replace(typeString, "std::string").value_or(typeString);
+                    typeString = goOptionalTypeRegex.replace(typeString, "std::optional<${1}${2}>").value_or(typeString);
+                    typeString = goArrayTypeRegex.replace(typeString, "std::vector<${1}>").value_or(typeString);
                     fieldMap.try_emplace(findInfo.group[findInfo.namedGroup["name"]].text, typeString);
                 }
             } else {
@@ -208,21 +208,53 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             f();
             outFile << "}\n";
         };
+    auto unwarpTypeRegex = regex::Pcre2Implementation("^(\\S*<)?(\\S*)?(>)?$");
+    auto optionalTypeRegex = regex::Pcre2Implementation("std::optional");
+    auto vectorTypeRegex = regex::Pcre2Implementation("std::vector");
+    std::string eventNamespaceString = "SkyDreamBeta::Network::Github::Event";
+    std::string structureNamespaceString = "SkyDreamBeta::Network::Github::Structure";
+    std::unordered_map<std::string, int> typeNameMap;
     // 创建目录
-    std::filesystem::create_directory("github");
+    std::filesystem::create_directories("github/event");
+    std::filesystem::create_directories("github/structure");
     for (auto& [structName, fieldMap] : structMap) {
         // 创建或打开文件用于写入
-        std::ofstream outFile(std::format("github/{}.h", structName));
+        std::ofstream outFile(std::format("github/structure/{}.h", structName));
         // 检查文件是否成功打开
         if (outFile.is_open()) {
             outFile << "#pragma once\n#include \"Global.h\"\n";
+            typeNameMap.clear();
+            bool existOptional = false;
+            bool existVector = false;
             for (auto& [fieldName, typeName] : fieldMap) {
-                if (structMap.contains(typeName)) {
+                auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2").value_or(typeName);
+                if (structMap.contains(unwarpTypeName)) {
+                    typeNameMap.try_emplace(std::format("{}", unwarpTypeName), 0);
+                } else if (eventMap.contains(unwarpTypeName)) {
+                    typeNameMap.try_emplace(std::format("../event/{}", unwarpTypeName), 0);
+                }
+                if (!existOptional) {
+                    if (optionalTypeRegex.exist(typeName).value_or(false)) {
+                        typeNameMap.emplace("optional", 1);
+                        existOptional = true;
+                    }
+                }
+                if (!existVector) {
+                    if (vectorTypeRegex.exist(typeName).value_or(false)) {
+                        typeNameMap.emplace("vector", 1);
+                        existVector = true;
+                    }
+                }
+            }
+            for (auto& [typeName, type] : typeNameMap) {
+                if (type == 0) {
                     outFile << std::format("#include \"{}.h\"\n", typeName);
+                } else {
+                    outFile << std::format("#include <{}>\n", typeName);
                 }
             }
             outFile << "\n";
-            wirteNamespace(outFile, "SkyDreamBeta::inline Network::Github", [&]() {
+            wirteNamespace(outFile, structureNamespaceString, [&]() {
                 outFile << "struct " << structName << "\n{\n";
                 for (auto& [fieldName, typeName] : fieldMap) {
                     outFile << std::format("    {} {};\n", typeName, fieldName);
@@ -230,24 +262,96 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                 outFile << "};\n";
             });
             wirteNamespace(outFile, "nlohmann", [&]() {
-                outFile << "void to_json(json& j, const SkyDreamBeta::Network::Github::" << structName << "& d);\n";
-                outFile << "void from_json(const json& j, SkyDreamBeta::Network::Github::" << structName << "& d);\n";
+                outFile << "void to_json(json& j, const " << structureNamespaceString << "::" << structName << "& d);\n";
+                outFile << "void from_json(const json& j, " << structureNamespaceString << "::" << structName << "& d);\n";
             });
             // 关闭文件
             outFile.close();
         }
         // 创建或打开文件用于写入
-        outFile = std::ofstream(std::format("github/{}.cpp", structName));
+        outFile = std::ofstream(std::format("github/structure/{}.cpp", structName));
         // 检查文件是否成功打开
         if (outFile.is_open()) {
             outFile << "#include \"" << structName << ".h\"\n";
             wirteNamespace(outFile, "nlohmann", [&]() {
-                outFile << "void to_json(json& j, const SkyDreamBeta::Network::Github::" << structName << "& d)\n{\n    j = json {\n";
+                outFile << "void to_json(json& j, const " << structureNamespaceString << "::" << structName << "& d)\n{\n    j = json {\n";
                 for (auto& [fieldName, typeName] : fieldMap) {
                     outFile << "        {" << std::format(" \"{}\", d.{} ", fieldName, fieldName) << "},\n";
                 }
                 outFile << "    };\n}\n";
-                outFile << "void from_json(const json& j, SkyDreamBeta::Network::Github::" << structName << "& d)\n{\n    json t = j;\n";
+                outFile << "void from_json(const json& j, " << structureNamespaceString << "::" << structName << "& d)\n{\n    json t = j;\n";
+                for (auto& [fieldName, typeName] : fieldMap) {
+                    outFile << std::format("    SkyDreamBeta::JsonUtils::getAndRemove(t, \"{}\", d.{});\n", fieldName, fieldName);
+                }
+                outFile << "    _ASSERT_EXPR(t.size() == 0, \"Key size must be 0\");\n}\n";
+            });
+            // 关闭文件
+            outFile.close();
+        }
+    }
+    for (auto& [structName, fieldMap] : eventMap) {
+        // 创建或打开文件用于写入
+        std::ofstream outFile(std::format("github/event/{}.h", structName));
+        // 检查文件是否成功打开
+        if (outFile.is_open()) {
+            outFile << "#pragma once\n#include \"Global.h\"\n";
+            typeNameMap.clear();
+            bool existOptional = false;
+            bool existVector = false;
+            for (auto& [fieldName, typeName] : fieldMap) {
+                auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2").value_or(typeName);
+                if (structMap.contains(unwarpTypeName)) {
+                    typeNameMap.try_emplace(std::format("../structure/{}", unwarpTypeName), 0);
+                } else if (eventMap.contains(unwarpTypeName)) {
+                    typeNameMap.try_emplace(std::format("{}", unwarpTypeName), 0);
+                }
+                if (!existOptional) {
+                    if (optionalTypeRegex.exist(typeName).value_or(false)) {
+                        typeNameMap.emplace("optional", 1);
+                        existOptional = true;
+                    }
+                }
+                if (!existVector) {
+                    if (vectorTypeRegex.exist(typeName).value_or(false)) {
+                        typeNameMap.emplace("vector", 1);
+                        existVector = true;
+                    }
+                }
+            }
+            for (auto& [typeName, type] : typeNameMap) {
+                if (type == 0) {
+                    outFile << std::format("#include \"{}.h\"\n", typeName);
+                } else {
+                    outFile << std::format("#include <{}>\n", typeName);
+                }
+            }
+            outFile << "\n";
+            wirteNamespace(outFile, eventNamespaceString, [&]() {
+                outFile << "struct " << structName << "\n{\n";
+                for (auto& [fieldName, typeName] : fieldMap) {
+                    outFile << std::format("    {} {};\n", typeName, fieldName);
+                }
+                outFile << "};\n";
+            });
+            wirteNamespace(outFile, "nlohmann", [&]() {
+                outFile << "void to_json(json& j, const " << eventNamespaceString << "::" << structName << "& d);\n";
+                outFile << "void from_json(const json& j, " << eventNamespaceString << "::" << structName << "& d);\n";
+            });
+            // 关闭文件
+            outFile.close();
+        }
+        // 创建或打开文件用于写入
+        outFile = std::ofstream(std::format("github/event/{}.cpp", structName));
+        // 检查文件是否成功打开
+        if (outFile.is_open()) {
+            outFile << "#include \"" << structName << ".h\"\n";
+            wirteNamespace(outFile, "nlohmann", [&]() {
+                outFile << "void to_json(json& j, const " << eventNamespaceString << "::" << structName << "& d)\n{\n    j = json {\n";
+                for (auto& [fieldName, typeName] : fieldMap) {
+                    outFile << "        {" << std::format(" \"{}\", d.{} ", fieldName, fieldName) << "},\n";
+                }
+                outFile << "    };\n}\n";
+                outFile << "void from_json(const json& j, " << eventNamespaceString << "::" << structName << "& d)\n{\n    json t = j;\n";
                 for (auto& [fieldName, typeName] : fieldMap) {
                     outFile << std::format("    SkyDreamBeta::JsonUtils::getAndRemove(t, \"{}\", d.{});\n", fieldName, fieldName);
                 }
