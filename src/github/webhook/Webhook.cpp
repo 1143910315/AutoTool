@@ -80,7 +80,7 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
     } else {
         std::cerr << replaceResult.error() << std::endl;
     }
-    std::vector<regex::Pcre2Implementation::ReplaceInfo> replaceInfoList;
+    std::vector<regex::Pcre2Implementation::MatchInfo> matchInfoList;
     auto extractStructRegex = regex::Pcre2Implementation("^(\\s*)\\S+\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
     auto extractArrayStructRegex = regex::Pcre2Implementation("^(\\s*)\\S+\\s+\\[\\]struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
     auto extractOptionalStructRegex = regex::Pcre2Implementation("^(\\s*)\\S+\\s+\\*struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
@@ -100,15 +100,15 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                 } else {
                     auto [iterator, success] = structFieldMap.try_emplace(name, std::unordered_map<std::string, std::string>());
                     auto& [nameKey, fieldMap] = *iterator;
-                    for (auto& findInfo : findResult.value()) {
-                        auto& typeString = findInfo.group[findInfo.namedGroup["type"]].text;
+                    for (auto& matchInfo : findResult.value()) {
+                        auto& typeString = matchInfo.group[matchInfo.namedGroup["type"]].text;
                         typeString = goStringTypeRegex.replace(typeString, "std::string").value_or(typeString);
                         typeString = goTimeTypeRegex.replace(typeString, "std::string").value_or(typeString);
                         typeString = goFloat64TypeRegex.replace(typeString, "double").value_or(typeString);
                         typeString = goUint32TypeRegex.replace(typeString, "uint").value_or(typeString);
                         typeString = goOptionalTypeRegex.replace(typeString, "std::optional<${1}${2}>").value_or(typeString);
                         typeString = goArrayTypeRegex.replace(typeString, "std::vector<${1}>").value_or(typeString);
-                        fieldMap.try_emplace(findInfo.group[findInfo.namedGroup["name"]].text, typeString);
+                        fieldMap.try_emplace(matchInfo.group[matchInfo.namedGroup["name"]].text, typeString);
                     }
                 }
             } else {
@@ -118,46 +118,46 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
     bool running = false;
     do {
         running = false;
-        replaceResult = extractStructRegex.replace(content, "${1}${3} ${3};", replaceInfoList);
+        replaceResult = extractStructRegex.replace(content, "${1}${3} ${3};", matchInfoList);
         if (replaceResult) {
             content = replaceResult.value();
-            for (auto& replaceInfo : replaceInfoList) {
-                decodeFieldFunction(replaceInfo.group[replaceInfo.namedGroup["name"]].text, replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
+            for (auto& matchInfo : matchInfoList) {
+                decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
             }
         } else {
             std::cerr << replaceResult.error() << std::endl;
         }
-        running = replaceInfoList.size() > 0;
-        replaceResult = extractArrayStructRegex.replace(content, "${1}std::vector<${3}> ${3};", replaceInfoList);
+        running = matchInfoList.size() > 0;
+        replaceResult = extractArrayStructRegex.replace(content, "${1}std::vector<${3}> ${3};", matchInfoList);
         if (replaceResult) {
             content = replaceResult.value();
-            for (auto& replaceInfo : replaceInfoList) {
-                decodeFieldFunction(replaceInfo.group[replaceInfo.namedGroup["name"]].text, replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
+            for (auto& matchInfo : matchInfoList) {
+                decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
             }
         } else {
             std::cerr << replaceResult.error() << std::endl;
         }
-        running = running || replaceInfoList.size() > 0;
-        replaceResult = extractOptionalStructRegex.replace(content, "${1}std::optional<${3}> ${3};", replaceInfoList);
+        running = running || matchInfoList.size() > 0;
+        replaceResult = extractOptionalStructRegex.replace(content, "${1}std::optional<${3}> ${3};", matchInfoList);
         if (replaceResult) {
             content = replaceResult.value();
-            for (auto& replaceInfo : replaceInfoList) {
-                decodeFieldFunction(replaceInfo.group[replaceInfo.namedGroup["name"]].text, replaceInfo.group[replaceInfo.namedGroup["body"]].text, structMap);
+            for (auto& matchInfo : matchInfoList) {
+                decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
             }
         } else {
             std::cerr << replaceResult.error() << std::endl;
         }
-        running = running || replaceInfoList.size() > 0;
+        running = running || matchInfoList.size() > 0;
         findResult = extractNamedStructRegex.find(content);
         if (findResult) {
             running = running || findResult.value().size() > 0;
-            for (auto& findInfo : findResult.value() | std::views::reverse) {
-                auto& lowerString = findInfo.group[findInfo.namedGroup["name"]].text;
+            for (auto& matchInfo : findResult.value() | std::views::reverse) {
+                auto& lowerString = matchInfo.group[matchInfo.namedGroup["name"]].text;
                 for (char& c : lowerString) {  // 遍历字符串中的每个字符
                     c = (char)std::tolower(c); // 将字符转换为小写
                 }
-                content.replace(findInfo.group[0].start, findInfo.group[0].text.length(), std::format("{}{} {};", findInfo.group[1].text, lowerString, lowerString));
-                decodeFieldFunction(lowerString, findInfo.group[findInfo.namedGroup["body"]].text, structMap);
+                content.replace(matchInfo.group[0].start, matchInfo.group[0].text.length(), std::format("{}{} {};", matchInfo.group[1].text, lowerString, lowerString));
+                decodeFieldFunction(lowerString, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
             }
         } else {
             std::cerr << findResult.error() << std::endl;
@@ -165,8 +165,8 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
     } while (running);
     findResult = regex::Pcre2Implementation("\\s*type\\s+(?<name>\\S+)\\s+struct\\s*\\{(?<body>[^\\{\\}]+)\\}").find(content);
     if (findResult) {
-        for (auto& findInfo : findResult.value()) {
-            decodeFieldFunction(findInfo.group[findInfo.namedGroup["name"]].text, findInfo.group[findInfo.namedGroup["body"]].text, eventMap);
+        for (auto& matchInfo : findResult.value()) {
+            decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, eventMap);
         }
     } else {
         std::cerr << findResult.error() << std::endl;
@@ -277,11 +277,11 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                     if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
                         prefix = "_";
                     }
-                    auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", replaceInfoList).value_or(typeName);
+                    auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", matchInfoList).value_or(typeName);
                     if (structMap.contains(unwarpTypeName)) {
                         outFile << std::format("    {}{} {}{};\n", typeName, suffix, prefix, fieldName);
                     } else if (eventMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {}{} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Event::"), suffix, prefix, fieldName);
+                        outFile << std::format("    {}{} {}{};\n", typeName.replace(matchInfoList[0].group[2].start, 0, "Event::"), suffix, prefix, fieldName);
                     } else {
                         outFile << std::format("    {}{} {}{};\n", typeName, suffix, prefix, fieldName);
                     }
@@ -368,9 +368,9 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
                     if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
                         prefix = "_";
                     }
-                    auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", replaceInfoList).value_or(typeName);
+                    auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", matchInfoList).value_or(typeName);
                     if (structMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {} {}{};\n", typeName.replace(replaceInfoList[0].group[2].start, 0, "Structure::"), prefix, fieldName);
+                        outFile << std::format("    {} {}{};\n", typeName.replace(matchInfoList[0].group[2].start, 0, "Structure::"), prefix, fieldName);
                     } else if (eventMap.contains(unwarpTypeName)) {
                         outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
                     } else {

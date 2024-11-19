@@ -75,9 +75,9 @@ namespace regex {
             return true;
         }
 
-        std::expected<std::vector<FindInfo>, std::string> find(const std::string& subject, int times, PCRE2_SIZE start) {
-            std::vector<FindInfo> findInfoList;
-            FindInfo findInfo;
+        std::expected<std::vector<MatchInfo>, std::string> find(const std::string& subject, int times, PCRE2_SIZE start) {
+            std::vector<MatchInfo> matchInfoList;
+            MatchInfo matchInfo;
             /* Now run the match. */
             int rc = pcre2_match(
                 re,                                                                    /* the compiled pattern */
@@ -92,7 +92,7 @@ namespace regex {
             if (rc < 0) {
                 switch (rc) {
                     case PCRE2_ERROR_NOMATCH: {
-                        return findInfoList;
+                        return matchInfoList;
                     }
                 }
                 pcre2_get_error_message(rc, buffer.get(), maxBufferSize);
@@ -100,7 +100,7 @@ namespace regex {
             }
 
             for (int i = 0; i < rc; i++) {
-                findInfo.group.push_back({
+                matchInfo.group.push_back({
                     ovector[2 * i],
                     ovector[2 * i + 1],
                     subject.substr(ovector[2 * i], ovector[2 * i + 1] - ovector[2 * i])
@@ -115,11 +115,11 @@ namespace regex {
                 PCRE2_SPTR tabptr = nameTable;
                 for (uint32_t i = 0; i < nameCount; i++) {
                     size_t n = ((size_t)(tabptr[0]) << 8) | tabptr[1];
-                    findInfo.namedGroup.emplace(std::string(reinterpret_cast<const char *>(tabptr + 2)), n);
+                    matchInfo.namedGroup.emplace(std::string(reinterpret_cast<const char *>(tabptr + 2)), n);
                     tabptr += nameEntrySize;
                 }
             }
-            findInfoList.push_back(findInfo);
+            matchInfoList.push_back(matchInfo);
             for (int nowTimes = 1; nowTimes != times; ) {
                 uint32_t options = 0; /* Normally no options */
                 start = ovector[1];   /* Start at end of previous match */
@@ -182,10 +182,10 @@ namespace regex {
                     pcre2_get_error_message(rc, buffer.get(), maxBufferSize);
                     return std::unexpected(std::format("Matching error {}", (char *)buffer.get()));
                 }
-                findInfo.group.clear();
-                findInfo.namedGroup.clear();
+                matchInfo.group.clear();
+                matchInfo.namedGroup.clear();
                 for (int i = 0; i < rc; i++) {
-                    findInfo.group.push_back({
+                    matchInfo.group.push_back({
                         ovector[2 * i],
                         ovector[2 * i + 1],
                         subject.substr(ovector[2 * i], ovector[2 * i + 1] - ovector[2 * i])
@@ -200,14 +200,14 @@ namespace regex {
                     PCRE2_SPTR tabptr = nameTable;
                     for (uint32_t i = 0; i < nameCount; i++) {
                         size_t n = ((size_t)(tabptr[0]) << 8) | tabptr[1];
-                        findInfo.namedGroup.emplace(std::string(reinterpret_cast<const char *>(tabptr + 2)), n);
+                        matchInfo.namedGroup.emplace(std::string(reinterpret_cast<const char *>(tabptr + 2)), n);
                         tabptr += nameEntrySize;
                     }
                 }
-                findInfoList.push_back(findInfo);
+                matchInfoList.push_back(matchInfo);
                 nowTimes++;
             }
-            return findInfoList;
+            return matchInfoList;
         }
 
         std::expected<std::string, std::string> replace(std::string subject, const std::string& replacementText, int times, size_t start) {
@@ -313,9 +313,9 @@ namespace regex {
             return subject;
         }
 
-        std::expected<std::string, std::string> replace(std::string subject, const std::string& replacementText, std::vector<ReplaceInfo>& replaceInfoList, int times, size_t start) {
-            replaceInfoList.clear();
-            ReplaceInfo replaceInfo;
+        std::expected<std::string, std::string> replace(std::string subject, const std::string& replacementText, std::vector<MatchInfo>& matchInfoList, int times, size_t start) {
+            matchInfoList.clear();
+            MatchInfo replaceInfo;
             // 启用扩展替换处理，将未知的命名捕获组视为未设置，简单的未设置插入等于空字符串
             uint32_t defaultOptions = PCRE2_SUBSTITUTE_OVERFLOW_LENGTH | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_UNKNOWN_UNSET | PCRE2_SUBSTITUTE_UNSET_EMPTY;
             if (times == 0) {
@@ -423,7 +423,7 @@ namespace regex {
                         tabptr += nameEntrySize;
                     }
                 }
-                replaceInfoList.push_back(replaceInfo);
+                matchInfoList.push_back(replaceInfo);
                 options = defaultOptions;
                 subject = reinterpret_cast<char *>(buffer.get());
                 /* If the previous match was for an empty string, we are finished if we are
@@ -494,7 +494,7 @@ std::expected<bool, std::string> regex::Pcre2Implementation::exist(const std::st
     return std::unexpected(result.error_or("初始化错误！"));
 }
 
-std::expected<std::vector<regex::Pcre2Implementation::FindInfo>, std::string> regex::Pcre2Implementation::find(const std::string& text, int times, size_t start) {
+std::expected<std::vector<regex::Pcre2Implementation::MatchInfo>, std::string> regex::Pcre2Implementation::find(const std::string& text, int times, size_t start) {
     auto result = init();
     if (result.value_or(false)) {
         return d->find(text, times, start);
@@ -510,10 +510,10 @@ std::expected<std::string, std::string> regex::Pcre2Implementation::replace(cons
     return std::unexpected(result.error_or("初始化错误！"));
 }
 
-std::expected<std::string, std::string> regex::Pcre2Implementation::replace(const std::string& originalText, const std::string& replacementText, std::vector<ReplaceInfo>& replaceInfoList, int times, size_t start) {
+std::expected<std::string, std::string> regex::Pcre2Implementation::replace(const std::string& originalText, const std::string& replacementText, std::vector<MatchInfo>& matchInfoList, int times, size_t start) {
     auto result = init();
     if (result.value_or(false)) {
-        return d->replace(originalText, replacementText, replaceInfoList, times, start);
+        return d->replace(originalText, replacementText, matchInfoList, times, start);
     }
     return std::unexpected(result.error_or("初始化错误！"));
 }
