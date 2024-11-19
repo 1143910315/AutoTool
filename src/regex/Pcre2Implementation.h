@@ -21,6 +21,14 @@ namespace regex {
         public:
             std::vector<StringWithPosition> group;
             std::unordered_map<std::string, size_t> namedGroup;
+
+            std::string& operator[](const std::string& name) {
+                return group[namedGroup[name]].text;
+            }
+
+            std::string& operator[](size_t index) {
+                return group[index].text;
+            }
         };
         Pcre2Implementation(const std::string& pattern);
         ~Pcre2Implementation();

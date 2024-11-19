@@ -12,7 +12,20 @@
 #include <unordered_map>
 #include <unordered_set>
 
+class FieldInfo {
+public:
+    FieldInfo(const std::string& fieldName, const std::string& typeName, const std::string& keyName) : fieldName(fieldName), typeName(typeName), keyName(keyName) {
+    }
+
+    std::string fieldName;
+    std::string typeName;
+    std::string keyName;
+};
 std::string github::webhook::Webhook::transform(std::string fileName) {
+    // https://docs.github.com/zh/webhooks/webhook-events-and-payloads#push
+    // go语言 https://github.com/go-playground/webhooks
+    // https://github.com/go-playground/webhooks/blob/master/github%2Fpayload.go
+    // C# https://github.com/octokit/webhooks.net
     // 创建ifstream对象并打开文件
     auto inputFile = std::ifstream(fileName);
 
@@ -24,414 +37,469 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
             inputFile.close();
         };
     std::string content((std::istreambuf_iterator<char>(inputFile)), std::istreambuf_iterator<char>());
-    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> structMap;
-    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> eventMap;
-    std::unordered_set<std::string> hrefFieldSet;
-    auto findResult = regex::Pcre2Implementation("").find(content, 1);
-    if (findResult) {
-    } else {
-        std::cerr << findResult.error() << std::endl;
-    }
     auto replaceResult = regex::Pcre2Implementation("(\\n)\\r").replace(content, "$1");
     if (replaceResult) {
         content = replaceResult.value();
     } else {
         std::cerr << replaceResult.error() << std::endl;
     }
-    replaceResult = regex::Pcre2Implementation("^package .*").replace(content, "");
-    if (replaceResult) {
-        content = replaceResult.value();
-    } else {
-        std::cerr << replaceResult.error() << std::endl;
-    }
-    replaceResult = regex::Pcre2Implementation("^import .*").replace(content, "");
-    if (replaceResult) {
-        content = replaceResult.value();
-    } else {
-        std::cerr << replaceResult.error() << std::endl;
-    }
-    replaceResult = regex::Pcre2Implementation("//.*?$").replace(content, "");
-    if (replaceResult) {
-        content = replaceResult.value();
-    } else {
-        std::cerr << replaceResult.error() << std::endl;
-    }
-    replaceResult = regex::Pcre2Implementation("^(\\s*)\\S+\\s+(\\S+)\\s+`json:\"(\\S+?)(,\\S*)?\"`").replace(content, "${1}${2} ${3};");
-    if (replaceResult) {
-        content = replaceResult.value();
-    } else {
-        std::cerr << replaceResult.error() << std::endl;
-    }
-    // replaceResult = regex::Pcre2Implementation("^(\\s*)(\\S+)\\s+struct").replace(content, "${1}struct ${2}");
-    // if (replaceResult) {
-    // content = replaceResult.value();
-    // } else {
-    // std::cerr << replaceResult.error() << std::endl;
-    // }
-    // replaceResult = regex::Pcre2Implementation("^(\\s*)type\\s*(\\S+)\\s+struct").replace(content, "${1}struct ${2}");
-    // if (replaceResult) {
-    // content = replaceResult.value();
-    // } else {
-    // std::cerr << replaceResult.error() << std::endl;
-    // }
-    replaceResult = regex::Pcre2Implementation("(interface\\{\\})|(struct\\{\\})").replace(content, "nlohmann::json");
-    if (replaceResult) {
-        content = replaceResult.value();
-    } else {
-        std::cerr << replaceResult.error() << std::endl;
-    }
+    size_t id = 0;
+    bool running = false;
+    std::unordered_map<std::string, std::vector<FieldInfo>> structInfoMap;
     std::vector<regex::Pcre2Implementation::MatchInfo> matchInfoList;
-    auto extractStructRegex = regex::Pcre2Implementation("^(\\s*)\\S+\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
-    auto extractArrayStructRegex = regex::Pcre2Implementation("^(\\s*)\\S+\\s+\\[\\]struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
-    auto extractOptionalStructRegex = regex::Pcre2Implementation("^(\\s*)\\S+\\s+\\*struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
-    auto extractNamedStructRegex = regex::Pcre2Implementation("^(\\s*)(?<name>\\S+?)\\s+struct[^\\{]+\\{(?<body>[^\\{\\}]+)\\}\\s*$");
-    auto structFieldRegex = regex::Pcre2Implementation("^\\s*(?<type>\\S+)\\s*(?<name>\\S+);\\s*$");
+    auto extractStructRegex = regex::Pcre2Implementation("^(?<space>\\s*)\\S+\\s+struct\\s*\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
+    auto extractArrayStructRegex = regex::Pcre2Implementation("^(?<space>\\s*)\\S+\\s+\\[\\]struct\\s*\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
+    auto extractOptionalStructRegex = regex::Pcre2Implementation("^(?<space>\\s*)\\S+\\s+\\*struct\\s*\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
+    auto extractNamedStructRegex = regex::Pcre2Implementation("^(?<space>\\s*)(?<name>\\S+?)\\s+struct\\s*\\{(?<body>[^\\{\\}]+)\\}\\s*$");
+    auto structFieldRegex = regex::Pcre2Implementation("^(?<space>\\s*)(?<fieldName>\\S+)\\s+(?<typeName>\\S+)\\s+`json:\"(?<keyName>\\S+?)(,\\S*)?\"`");
     auto goStringTypeRegex = regex::Pcre2Implementation("string");
     auto goTimeTypeRegex = regex::Pcre2Implementation("time\\.Time");
     auto goFloat64TypeRegex = regex::Pcre2Implementation("float64");
     auto goUint32TypeRegex = regex::Pcre2Implementation("uint32");
+    auto goJsonTypeRegex = regex::Pcre2Implementation("(\\[\\])?interface{}");
     auto goOptionalTypeRegex = regex::Pcre2Implementation("(\\S*)\\*(\\S+)");
     auto goArrayTypeRegex = regex::Pcre2Implementation("\\[\\](\\S+)");
-    auto decodeFieldFunction = [&](const std::string& name, const std::string& body, std::unordered_map<std::string, std::unordered_map<std::string, std::string>>& structFieldMap) {
+    auto decodeFieldFunction = [&](const std::string& body) {
+            std::vector<FieldInfo> fieldInfoList;
             auto findResult = structFieldRegex.find(body);
             if (findResult) {
-                if (findResult.value().size() == 1 && findResult.value()[0].group[findResult.value()[0].namedGroup["name"]].text == "href") {
-                    hrefFieldSet.emplace(name);
-                } else {
-                    auto [iterator, success] = structFieldMap.try_emplace(name, std::unordered_map<std::string, std::string>());
-                    auto& [nameKey, fieldMap] = *iterator;
-                    for (auto& matchInfo : findResult.value()) {
-                        auto& typeString = matchInfo.group[matchInfo.namedGroup["type"]].text;
-                        typeString = goStringTypeRegex.replace(typeString, "std::string").value_or(typeString);
-                        typeString = goTimeTypeRegex.replace(typeString, "std::string").value_or(typeString);
-                        typeString = goFloat64TypeRegex.replace(typeString, "double").value_or(typeString);
-                        typeString = goUint32TypeRegex.replace(typeString, "uint").value_or(typeString);
-                        typeString = goOptionalTypeRegex.replace(typeString, "std::optional<${1}${2}>").value_or(typeString);
-                        typeString = goArrayTypeRegex.replace(typeString, "std::vector<${1}>").value_or(typeString);
-                        fieldMap.try_emplace(matchInfo.group[matchInfo.namedGroup["name"]].text, typeString);
-                    }
+                for (auto& matchInfo : *findResult) {
+                    auto& typeString = matchInfo["typeName"];
+                    typeString = goStringTypeRegex.replace(typeString, "std::string").value_or(typeString);
+                    typeString = goTimeTypeRegex.replace(typeString, "std::string").value_or(typeString);
+                    typeString = goFloat64TypeRegex.replace(typeString, "double").value_or(typeString);
+                    typeString = goUint32TypeRegex.replace(typeString, "uint").value_or(typeString);
+                    typeString = goJsonTypeRegex.replace(typeString, "nlohmann::json").value_or(typeString);
+                    typeString = goOptionalTypeRegex.replace(typeString, "std::optional<${1}${2}>").value_or(typeString);
+                    typeString = goArrayTypeRegex.replace(typeString, "std::vector<${1}>").value_or(typeString);
+                    fieldInfoList.emplace_back(FieldInfo(matchInfo["fieldName"], matchInfo["typeName"], matchInfo["keyName"]));
                 }
             } else {
                 std::cerr << findResult.error() << std::endl;
             }
+            return fieldInfoList;
         };
-    bool running = false;
-    do {
-        running = false;
-        replaceResult = extractStructRegex.replace(content, "${1}${3} ${3};", matchInfoList);
-        if (replaceResult) {
-            content = replaceResult.value();
-            for (auto& matchInfo : matchInfoList) {
-                decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
-            }
-        } else {
-            std::cerr << replaceResult.error() << std::endl;
-        }
-        running = matchInfoList.size() > 0;
-        replaceResult = extractArrayStructRegex.replace(content, "${1}std::vector<${3}> ${3};", matchInfoList);
-        if (replaceResult) {
-            content = replaceResult.value();
-            for (auto& matchInfo : matchInfoList) {
-                decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
-            }
-        } else {
-            std::cerr << replaceResult.error() << std::endl;
-        }
-        running = running || matchInfoList.size() > 0;
-        replaceResult = extractOptionalStructRegex.replace(content, "${1}std::optional<${3}> ${3};", matchInfoList);
-        if (replaceResult) {
-            content = replaceResult.value();
-            for (auto& matchInfo : matchInfoList) {
-                decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
-            }
-        } else {
-            std::cerr << replaceResult.error() << std::endl;
-        }
-        running = running || matchInfoList.size() > 0;
-        findResult = extractNamedStructRegex.find(content);
-        if (findResult) {
-            running = running || findResult.value().size() > 0;
-            for (auto& matchInfo : findResult.value() | std::views::reverse) {
-                auto& lowerString = matchInfo.group[matchInfo.namedGroup["name"]].text;
-                for (char& c : lowerString) {  // 遍历字符串中的每个字符
-                    c = (char)std::tolower(c); // 将字符转换为小写
+    auto typeFindResult = regex::Pcre2Implementation("^type\\s+(?<eventName>\\S+)\\s+struct\\s*\\{(?<eventBody>[\\s\\S]*?)^\\}$").find(content);
+    if (typeFindResult) {
+        for (auto& typeStructMatchInfo : *typeFindResult) {
+            do {
+                running = false;
+                replaceResult = extractStructRegex.replace(typeStructMatchInfo["eventBody"], std::format("${{space}}{} struct `json:\"${{name}}\"`", id), matchInfoList, 1);
+                if (replaceResult) {
+                    if (matchInfoList.size() == 1) {
+                        typeStructMatchInfo["eventBody"] = replaceResult.value();
+                        structInfoMap.emplace(std::format("{}", id), decodeFieldFunction(matchInfoList[0]["body"]));
+                        id++;
+                    }
+                } else {
+                    std::cerr << replaceResult.error() << std::endl;
                 }
-                content.replace(matchInfo.group[0].start, matchInfo.group[0].text.length(), std::format("{}{} {};", matchInfo.group[1].text, lowerString, lowerString));
-                decodeFieldFunction(lowerString, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
-            }
-        } else {
-            std::cerr << findResult.error() << std::endl;
-        }
-    } while (running);
-    findResult = regex::Pcre2Implementation("\\s*type\\s+(?<name>\\S+)\\s+struct\\s*\\{(?<body>[^\\{\\}]+)\\}").find(content);
-    if (findResult) {
-        for (auto& matchInfo : findResult.value()) {
-            decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, eventMap);
+                running = matchInfoList.size() > 0;
+                replaceResult = extractArrayStructRegex.replace(typeStructMatchInfo["eventBody"], std::format("${{space}}{} []struct `json:\"${{name}}\"`", id), matchInfoList, 1);
+                if (replaceResult) {
+                    if (matchInfoList.size() == 1) {
+                        typeStructMatchInfo["eventBody"] = replaceResult.value();
+                        structInfoMap.emplace(std::format("{}", id), decodeFieldFunction(matchInfoList[0]["body"]));
+                        id++;
+                    }
+                } else {
+                    std::cerr << replaceResult.error() << std::endl;
+                }
+                running = running || matchInfoList.size() > 0;
+                replaceResult = extractOptionalStructRegex.replace(typeStructMatchInfo["eventBody"], std::format("${{space}}{} *struct `json:\"${{name}}\"`", id), matchInfoList, 1);
+                if (replaceResult) {
+                    if (matchInfoList.size() == 1) {
+                        typeStructMatchInfo["eventBody"] = replaceResult.value();
+                        structInfoMap.emplace(std::format("{}", id), decodeFieldFunction(matchInfoList[0]["body"]));
+                        id++;
+                    }
+                } else {
+                    std::cerr << replaceResult.error() << std::endl;
+                }
+                running = running || matchInfoList.size() > 0;
+                auto findResult = extractNamedStructRegex.find(typeStructMatchInfo["eventBody"], 1);
+                if (findResult) {
+                    if (findResult->size() > 0) {
+                        running = true;
+                        auto& matchInfo = (*findResult)[0];
+                        auto& lowerString = matchInfo["name"];
+                        for (char& c : lowerString) {  // 遍历字符串中的每个字符
+                            c = (char)std::tolower(c); // 将字符转换为小写
+                        }
+                        typeStructMatchInfo["eventBody"].replace(matchInfo.group[0].start, matchInfo[0].length(), std::format("{}{} struct `json:\"{}\"`", matchInfo["space"], id, lowerString));
+                        structInfoMap.emplace(std::format("{}", id), decodeFieldFunction(matchInfo["body"]));
+                        id++;
+                    }
+                } else {
+                    std::cerr << findResult.error() << std::endl;
+                }
+            } while (running);
         }
     } else {
-        std::cerr << findResult.error() << std::endl;
+        std::cerr << typeFindResult.error() << std::endl;
     }
-    // replaceResult = regex::Pcre2Implementation("\\*(\\S+)(\\s+)(\\s+;)").replace(content, "std::optional<${1}>${2}${3}");
-    // if (replaceResult) {
-    // content = replaceResult.value();
-    // } else {
-    // std::cerr << replaceResult.error() << std::endl;
-    // }
-    // replaceResult = regex::Pcre2Implementation("time\\.Time").replace(content, "string");
-    // if (replaceResult) {
-    // content = replaceResult.value();
-    // } else {
-    // std::cerr << replaceResult.error() << std::endl;
-    // }
-    // replaceResult = regex::Pcre2Implementation("(?<!\\S)string").replace(content, "std::string");
-    // if (replaceResult) {
-    // content = replaceResult.value();
-    // } else {
-    // std::cerr << replaceResult.error() << std::endl;
-    // }
-    // replaceResult = regex::Pcre2Implementation("(?<!\\S)[](\\S+)").replace(content, "std::vector<${1}>");
-    // if (replaceResult) {
-    // content = replaceResult.value();
-    // } else {
-    // std::cerr << replaceResult.error() << std::endl;
-    // }
-    // replaceResult = regex::Pcre2Implementation("\\}.*?$").replace(content, "};");
-    // if (replaceResult) {
-    // content = replaceResult.value();
-    // } else {
-    // std::cerr << replaceResult.error() << std::endl;
-    // }
-    //
-    // auto findResult = regex::Pcre2Implementation("(string)(\\s+)(\\S+;)(\\s+)//(.*?)$").find(content);
-    // if (findResult) {
-    // } else {
-    // std::cerr << replaceResult.error() << std::endl;
-    // }
-    // replaceResult = regex::Pcre2Implementation("\\}.*?$").replace(content, "};");
-    // if (replaceResult) {
-    // content = replaceResult.value();
-    // } else {
-    // std::cerr << replaceResult.error() << std::endl;
-    // }
-    auto wirteNamespace = [&](std::ofstream& outFile, const std::string& namespaceString, std::function<void()>&& f) {
-            outFile << "namespace " << namespaceString << "\n{\n";
-            f();
-            outFile << "}\n";
-        };
-    auto unwarpTypeRegex = regex::Pcre2Implementation("^(\\S*<)?(\\S*?)(>*)?$");
-    auto optionalTypeRegex = regex::Pcre2Implementation("std::optional");
-    auto vectorTypeRegex = regex::Pcre2Implementation("std::vector");
-    std::string eventNamespaceString = "SkyDreamBeta::Network::Github::Event";
-    std::string structureNamespaceString = "SkyDreamBeta::Network::Github::Structure";
-    std::unordered_map<std::string, int> typeNameMap;
-    // 创建目录
-    std::filesystem::create_directories("github/event");
-    std::filesystem::create_directories("github/structure");
-    for (auto& [structName, fieldMap] : structMap) {
-        // 创建或打开文件用于写入
-        std::ofstream outFile(std::format("github/structure/{}.h", structName));
-        // 检查文件是否成功打开
-        if (outFile.is_open()) {
-            outFile << "#pragma once\n#include \"Global.h\"\n#include \"utils/JsonUtils.h\"\n";
-            typeNameMap.clear();
-            bool existOptional = false;
-            bool existVector = false;
-            for (auto& [fieldName, typeName] : fieldMap) {
-                auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2").value_or(typeName);
-                if (structMap.contains(unwarpTypeName)) {
-                    typeNameMap.try_emplace(std::format("{}", unwarpTypeName), 0);
-                } else if (eventMap.contains(unwarpTypeName)) {
-                    typeNameMap.try_emplace(std::format("../event/{}", unwarpTypeName), 0);
-                } else if (hrefFieldSet.contains(unwarpTypeName)) {
-                    typeNameMap.try_emplace(std::format("{}", unwarpTypeName), 0);
-                }
-                if (!existOptional) {
-                    if (optionalTypeRegex.exist(typeName).value_or(false)) {
-                        typeNameMap.emplace("optional", 1);
-                        existOptional = true;
-                    }
-                }
-                if (!existVector) {
-                    if (vectorTypeRegex.exist(typeName).value_or(false)) {
-                        typeNameMap.emplace("vector", 1);
-                        existVector = true;
-                    }
-                }
-            }
-            std::string suffix = "";
-            if (structName == "_links") {
-                suffix = "_url";
-            }
-            for (auto& [typeName, type] : typeNameMap) {
-                if (type == 0) {
-                    outFile << std::format("#include \"{}{}.h\"\n", typeName, suffix);
-                } else {
-                    outFile << std::format("#include <{}>\n", typeName);
-                }
-            }
-            outFile << "\n";
-            wirteNamespace(outFile, structureNamespaceString, [&]() {
-                outFile << "struct " << structName << "\n{\n";
-                for (auto& [fieldName, typeName] : fieldMap) {
-                    std::string prefix = "";
-                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
-                        prefix = "_";
-                    }
-                    auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", matchInfoList).value_or(typeName);
-                    if (structMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {}{} {}{};\n", typeName, suffix, prefix, fieldName);
-                    } else if (eventMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {}{} {}{};\n", typeName.replace(matchInfoList[0].group[2].start, 0, "Event::"), suffix, prefix, fieldName);
-                    } else {
-                        outFile << std::format("    {}{} {}{};\n", typeName, suffix, prefix, fieldName);
-                    }
-                }
-                outFile << "};\n";
-            });
-            wirteNamespace(outFile, "nlohmann", [&]() {
-                outFile << "void to_json(json& j, const " << structureNamespaceString << "::" << structName << "& d);\n";
-                outFile << "void from_json(const json& j, " << structureNamespaceString << "::" << structName << "& d);\n";
-            });
-            // 关闭文件
-            outFile.close();
-        }
-        // 创建或打开文件用于写入
-        outFile = std::ofstream(std::format("github/structure/{}.cpp", structName));
-        // 检查文件是否成功打开
-        if (outFile.is_open()) {
-            outFile << "#include \"" << structName << ".h\"\n";
-            wirteNamespace(outFile, "nlohmann", [&]() {
-                outFile << "void to_json(json& j, const " << structureNamespaceString << "::" << structName << "& d)\n{\n    j = json {\n";
-                for (auto& [fieldName, typeName] : fieldMap) {
-                    std::string prefix = "";
-                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
-                        prefix = "_";
-                    }
-                    outFile << "        {" << std::format(" \"{}\", d.{}{} ", fieldName, prefix, fieldName) << "},\n";
-                }
-                outFile << "    };\n}\n";
-                outFile << "void from_json(const json& j, " << structureNamespaceString << "::" << structName << "& d)\n{\n    json t = j;\n";
-                for (auto& [fieldName, typeName] : fieldMap) {
-                    std::string prefix = "";
-                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
-                        prefix = "_";
-                    }
-                    outFile << std::format("    SkyDreamBeta::JsonUtils::getAndRemove(t, \"{}\", d.{}{});\n", fieldName, prefix, fieldName);
-                }
-                outFile << "    _ASSERT_EXPR(t.size() == 0, \"Key size must be 0\");\n}\n";
-            });
-            // 关闭文件
-            outFile.close();
-        }
-    }
-    for (auto& [structName, fieldMap] : eventMap) {
-        // 创建或打开文件用于写入
-        std::ofstream outFile(std::format("github/event/{}.h", structName));
-        // 检查文件是否成功打开
-        if (outFile.is_open()) {
-            outFile << "#pragma once\n#include \"Global.h\"\n#include \"utils/JsonUtils.h\"\n";
-            typeNameMap.clear();
-            bool existOptional = false;
-            bool existVector = false;
-            for (auto& [fieldName, typeName] : fieldMap) {
-                auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2").value_or(typeName);
-                if (structMap.contains(unwarpTypeName)) {
-                    typeNameMap.try_emplace(std::format("../structure/{}", unwarpTypeName), 0);
-                } else if (eventMap.contains(unwarpTypeName)) {
-                    typeNameMap.try_emplace(std::format("{}", unwarpTypeName), 0);
-                }
-                if (!existOptional) {
-                    if (optionalTypeRegex.exist(typeName).value_or(false)) {
-                        typeNameMap.emplace("optional", 1);
-                        existOptional = true;
-                    }
-                }
-                if (!existVector) {
-                    if (vectorTypeRegex.exist(typeName).value_or(false)) {
-                        typeNameMap.emplace("vector", 1);
-                        existVector = true;
-                    }
-                }
-            }
-            for (auto& [typeName, type] : typeNameMap) {
-                if (type == 0) {
-                    outFile << std::format("#include \"{}.h\"\n", typeName);
-                } else {
-                    outFile << std::format("#include <{}>\n", typeName);
-                }
-            }
-            outFile << "\n";
-            wirteNamespace(outFile, eventNamespaceString, [&]() {
-                outFile << "struct " << structName << "\n{\n";
-                for (auto& [fieldName, typeName] : fieldMap) {
-                    std::string prefix = "";
-                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
-                        prefix = "_";
-                    }
-                    auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", matchInfoList).value_or(typeName);
-                    if (structMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {} {}{};\n", typeName.replace(matchInfoList[0].group[2].start, 0, "Structure::"), prefix, fieldName);
-                    } else if (eventMap.contains(unwarpTypeName)) {
-                        outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
-                    } else {
-                        outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
-                    }
-                }
-                outFile << "};\n";
-            });
-            wirteNamespace(outFile, "nlohmann", [&]() {
-                outFile << "void to_json(json& j, const " << eventNamespaceString << "::" << structName << "& d);\n";
-                outFile << "void from_json(const json& j, " << eventNamespaceString << "::" << structName << "& d);\n";
-            });
-            // 关闭文件
-            outFile.close();
-        }
-        // 创建或打开文件用于写入
-        outFile = std::ofstream(std::format("github/event/{}.cpp", structName));
-        // 检查文件是否成功打开
-        if (outFile.is_open()) {
-            outFile << "#include \"" << structName << ".h\"\n";
-            wirteNamespace(outFile, "nlohmann", [&]() {
-                outFile << "void to_json(json& j, const " << eventNamespaceString << "::" << structName << "& d)\n{\n    j = json {\n";
-                for (auto& [fieldName, typeName] : fieldMap) {
-                    std::string prefix = "";
-                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
-                        prefix = "_";
-                    }
-                    outFile << "        {" << std::format(" \"{}\", d.{}{} ", fieldName, prefix, fieldName) << "},\n";
-                }
-                outFile << "    };\n}\n";
-                outFile << "void from_json(const json& j, " << eventNamespaceString << "::" << structName << "& d)\n{\n    json t = j;\n";
-                for (auto& [fieldName, typeName] : fieldMap) {
-                    std::string prefix = "";
-                    if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
-                        prefix = "_";
-                    }
-                    outFile << std::format("    SkyDreamBeta::JsonUtils::getAndRemove(t, \"{}\", d.{}{});\n", fieldName, prefix, fieldName);
-                }
-                outFile << "    _ASSERT_EXPR(t.size() == 0, \"Key size must be 0\");\n}\n";
-            });
-            // 关闭文件
-            outFile.close();
-        }
-    }
-    for (auto& structName : hrefFieldSet) {
-        // 创建或打开文件用于写入
-        std::ofstream outFile(std::format("github/structure/{}_url.h", structName));
-        // 检查文件是否成功打开
-        if (outFile.is_open()) {
-            outFile << "#pragma once\n#include \"Global.h\"\n#include \"utils/JsonUtils.h\"\n\nnamespace SkyDreamBeta::Network::Github::Structure\n{\nstruct " << structName << "_url\n{\n    std::string href;\n};\n}\nnamespace nlohmann\n{\nvoid to_json(json& j, const SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d);\nvoid from_json(const json& j, SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d);\n}\n";
-            // 关闭文件
-            outFile.close();
-        }
-        // 创建或打开文件用于写入
-        outFile = std::ofstream(std::format("github/structure/{}_url.cpp", structName));
-        // 检查文件是否成功打开
-        if (outFile.is_open()) {
-            outFile << "#include \"" << structName << "_url.h\"\nnamespace nlohmann\n{\nvoid to_json(json& j, const SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d)\n{\n    j = json {\n        { \"href\", d.href },\n    };\n}\nvoid from_json(const json& j, SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d)\n{\n    json t = j;\n    SkyDreamBeta::JsonUtils::getAndRemove(t, \"href\", d.href);\n    _ASSERT_EXPR(t.size() == 0, \"Key size must be 0\");\n}\n}\n";
-            // 关闭文件
-            outFile.close();
-        }
-    }
+
+    //std::unordered_map<std::string, std::unordered_map<std::string, std::string>> structMap;
+    //std::unordered_map<std::string, std::unordered_map<std::string, std::string>> eventMap;
+    //std::unordered_set<std::string> hrefFieldSet;
+    //replaceResult = regex::Pcre2Implementation("^package .*").replace(content, "");
+    //if (replaceResult) {
+    //    content = replaceResult.value();
+    //} else {
+    //    std::cerr << replaceResult.error() << std::endl;
+    //}
+    //replaceResult = regex::Pcre2Implementation("^import .*").replace(content, "");
+    //if (replaceResult) {
+    //    content = replaceResult.value();
+    //} else {
+    //    std::cerr << replaceResult.error() << std::endl;
+    //}
+    //replaceResult = regex::Pcre2Implementation("//.*?$").replace(content, "");
+    //if (replaceResult) {
+    //    content = replaceResult.value();
+    //} else {
+    //    std::cerr << replaceResult.error() << std::endl;
+    //}
+    //replaceResult = regex::Pcre2Implementation("^(\\s*)\\S+\\s+(\\S+)\\s+`json:\"(\\S+?)(,\\S*)?\"`").replace(content, "${1}${2} ${3};");
+    //if (replaceResult) {
+    //    content = replaceResult.value();
+    //} else {
+    //    std::cerr << replaceResult.error() << std::endl;
+    //}
+    //// replaceResult = regex::Pcre2Implementation("^(\\s*)(\\S+)\\s+struct").replace(content, "${1}struct ${2}");
+    //// if (replaceResult) {
+    //// content = replaceResult.value();
+    //// } else {
+    //// std::cerr << replaceResult.error() << std::endl;
+    //// }
+    //// replaceResult = regex::Pcre2Implementation("^(\\s*)type\\s*(\\S+)\\s+struct").replace(content, "${1}struct ${2}");
+    //// if (replaceResult) {
+    //// content = replaceResult.value();
+    //// } else {
+    //// std::cerr << replaceResult.error() << std::endl;
+    //// }
+    //replaceResult = regex::Pcre2Implementation("(interface\\{\\})|(struct\\{\\})").replace(content, "nlohmann::json");
+    //if (replaceResult) {
+    //    content = replaceResult.value();
+    //} else {
+    //    std::cerr << replaceResult.error() << std::endl;
+    //}
+    //do {
+    //    running = false;
+    //    replaceResult = extractStructRegex.replace(content, "${1}${3} ${3};", matchInfoList);
+    //    if (replaceResult) {
+    //        content = replaceResult.value();
+    //        for (auto& matchInfo : matchInfoList) {
+    //            decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
+    //        }
+    //    } else {
+    //        std::cerr << replaceResult.error() << std::endl;
+    //    }
+    //    running = matchInfoList.size() > 0;
+    //    replaceResult = extractArrayStructRegex.replace(content, "${1}std::vector<${3}> ${3};", matchInfoList);
+    //    if (replaceResult) {
+    //        content = replaceResult.value();
+    //        for (auto& matchInfo : matchInfoList) {
+    //            decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
+    //        }
+    //    } else {
+    //        std::cerr << replaceResult.error() << std::endl;
+    //    }
+    //    running = running || matchInfoList.size() > 0;
+    //    replaceResult = extractOptionalStructRegex.replace(content, "${1}std::optional<${3}> ${3};", matchInfoList);
+    //    if (replaceResult) {
+    //        content = replaceResult.value();
+    //        for (auto& matchInfo : matchInfoList) {
+    //            decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
+    //        }
+    //    } else {
+    //        std::cerr << replaceResult.error() << std::endl;
+    //    }
+    //    running = running || matchInfoList.size() > 0;
+    //    findResult = extractNamedStructRegex.find(content);
+    //    if (findResult) {
+    //        running = running || findResult.value().size() > 0;
+    //        for (auto& matchInfo : findResult.value() | std::views::reverse) {
+    //            auto& lowerString = matchInfo.group[matchInfo.namedGroup["name"]].text;
+    //            for (char& c : lowerString) {  // 遍历字符串中的每个字符
+    //                c = (char)std::tolower(c); // 将字符转换为小写
+    //            }
+    //            content.replace(matchInfo.group[0].start, matchInfo.group[0].text.length(), std::format("{}{} {};", matchInfo.group[1].text, lowerString, lowerString));
+    //            decodeFieldFunction(lowerString, matchInfo.group[matchInfo.namedGroup["body"]].text, structMap);
+    //        }
+    //    } else {
+    //        std::cerr << findResult.error() << std::endl;
+    //    }
+    //} while (running);
+    //findResult = regex::Pcre2Implementation("\\s*type\\s+(?<name>\\S+)\\s+struct\\s*\\{(?<body>[^\\{\\}]+)\\}").find(content);
+    //if (findResult) {
+    //    for (auto& matchInfo : findResult.value()) {
+    //        decodeFieldFunction(matchInfo.group[matchInfo.namedGroup["name"]].text, matchInfo.group[matchInfo.namedGroup["body"]].text, eventMap);
+    //    }
+    //} else {
+    //    std::cerr << findResult.error() << std::endl;
+    //}
+    //// replaceResult = regex::Pcre2Implementation("\\*(\\S+)(\\s+)(\\s+;)").replace(content, "std::optional<${1}>${2}${3}");
+    //// if (replaceResult) {
+    //// content = replaceResult.value();
+    //// } else {
+    //// std::cerr << replaceResult.error() << std::endl;
+    //// }
+    //// replaceResult = regex::Pcre2Implementation("time\\.Time").replace(content, "string");
+    //// if (replaceResult) {
+    //// content = replaceResult.value();
+    //// } else {
+    //// std::cerr << replaceResult.error() << std::endl;
+    //// }
+    //// replaceResult = regex::Pcre2Implementation("(?<!\\S)string").replace(content, "std::string");
+    //// if (replaceResult) {
+    //// content = replaceResult.value();
+    //// } else {
+    //// std::cerr << replaceResult.error() << std::endl;
+    //// }
+    //// replaceResult = regex::Pcre2Implementation("(?<!\\S)[](\\S+)").replace(content, "std::vector<${1}>");
+    //// if (replaceResult) {
+    //// content = replaceResult.value();
+    //// } else {
+    //// std::cerr << replaceResult.error() << std::endl;
+    //// }
+    //// replaceResult = regex::Pcre2Implementation("\\}.*?$").replace(content, "};");
+    //// if (replaceResult) {
+    //// content = replaceResult.value();
+    //// } else {
+    //// std::cerr << replaceResult.error() << std::endl;
+    //// }
+    ////
+    //// auto findResult = regex::Pcre2Implementation("(string)(\\s+)(\\S+;)(\\s+)//(.*?)$").find(content);
+    //// if (findResult) {
+    //// } else {
+    //// std::cerr << replaceResult.error() << std::endl;
+    //// }
+    //// replaceResult = regex::Pcre2Implementation("\\}.*?$").replace(content, "};");
+    //// if (replaceResult) {
+    //// content = replaceResult.value();
+    //// } else {
+    //// std::cerr << replaceResult.error() << std::endl;
+    //// }
+    //auto wirteNamespace = [&](std::ofstream& outFile, const std::string& namespaceString, std::function<void()>&& f) {
+    //        outFile << "namespace " << namespaceString << "\n{\n";
+    //        f();
+    //        outFile << "}\n";
+    //    };
+    //auto unwarpTypeRegex = regex::Pcre2Implementation("^(\\S*<)?(\\S*?)(>*)?$");
+    //auto optionalTypeRegex = regex::Pcre2Implementation("std::optional");
+    //auto vectorTypeRegex = regex::Pcre2Implementation("std::vector");
+    //std::string eventNamespaceString = "SkyDreamBeta::Network::Github::Event";
+    //std::string structureNamespaceString = "SkyDreamBeta::Network::Github::Structure";
+    //std::unordered_map<std::string, int> typeNameMap;
+    //// 创建目录
+    //std::filesystem::create_directories("github/event");
+    //std::filesystem::create_directories("github/structure");
+    //for (auto& [structName, fieldMap] : structMap) {
+    //    // 创建或打开文件用于写入
+    //    std::ofstream outFile(std::format("github/structure/{}.h", structName));
+    //    // 检查文件是否成功打开
+    //    if (outFile.is_open()) {
+    //        outFile << "#pragma once\n#include \"Global.h\"\n#include \"utils/JsonUtils.h\"\n";
+    //        typeNameMap.clear();
+    //        bool existOptional = false;
+    //        bool existVector = false;
+    //        for (auto& [fieldName, typeName] : fieldMap) {
+    //            auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2").value_or(typeName);
+    //            if (structMap.contains(unwarpTypeName)) {
+    //                typeNameMap.try_emplace(std::format("{}", unwarpTypeName), 0);
+    //            } else if (eventMap.contains(unwarpTypeName)) {
+    //                typeNameMap.try_emplace(std::format("../event/{}", unwarpTypeName), 0);
+    //            } else if (hrefFieldSet.contains(unwarpTypeName)) {
+    //                typeNameMap.try_emplace(std::format("{}", unwarpTypeName), 0);
+    //            }
+    //            if (!existOptional) {
+    //                if (optionalTypeRegex.exist(typeName).value_or(false)) {
+    //                    typeNameMap.emplace("optional", 1);
+    //                    existOptional = true;
+    //                }
+    //            }
+    //            if (!existVector) {
+    //                if (vectorTypeRegex.exist(typeName).value_or(false)) {
+    //                    typeNameMap.emplace("vector", 1);
+    //                    existVector = true;
+    //                }
+    //            }
+    //        }
+    //        std::string suffix = "";
+    //        if (structName == "_links") {
+    //            suffix = "_url";
+    //        }
+    //        for (auto& [typeName, type] : typeNameMap) {
+    //            if (type == 0) {
+    //                outFile << std::format("#include \"{}{}.h\"\n", typeName, suffix);
+    //            } else {
+    //                outFile << std::format("#include <{}>\n", typeName);
+    //            }
+    //        }
+    //        outFile << "\n";
+    //        wirteNamespace(outFile, structureNamespaceString, [&]() {
+    //            outFile << "struct " << structName << "\n{\n";
+    //            for (auto& [fieldName, typeName] : fieldMap) {
+    //                std::string prefix = "";
+    //                if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+    //                    prefix = "_";
+    //                }
+    //                auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", matchInfoList).value_or(typeName);
+    //                if (structMap.contains(unwarpTypeName)) {
+    //                    outFile << std::format("    {}{} {}{};\n", typeName, suffix, prefix, fieldName);
+    //                } else if (eventMap.contains(unwarpTypeName)) {
+    //                    outFile << std::format("    {}{} {}{};\n", typeName.replace(matchInfoList[0].group[2].start, 0, "Event::"), suffix, prefix, fieldName);
+    //                } else {
+    //                    outFile << std::format("    {}{} {}{};\n", typeName, suffix, prefix, fieldName);
+    //                }
+    //            }
+    //            outFile << "};\n";
+    //        });
+    //        wirteNamespace(outFile, "nlohmann", [&]() {
+    //            outFile << "void to_json(json& j, const " << structureNamespaceString << "::" << structName << "& d);\n";
+    //            outFile << "void from_json(const json& j, " << structureNamespaceString << "::" << structName << "& d);\n";
+    //        });
+    //        // 关闭文件
+    //        outFile.close();
+    //    }
+    //    // 创建或打开文件用于写入
+    //    outFile = std::ofstream(std::format("github/structure/{}.cpp", structName));
+    //    // 检查文件是否成功打开
+    //    if (outFile.is_open()) {
+    //        outFile << "#include \"" << structName << ".h\"\n";
+    //        wirteNamespace(outFile, "nlohmann", [&]() {
+    //            outFile << "void to_json(json& j, const " << structureNamespaceString << "::" << structName << "& d)\n{\n    j = json {\n";
+    //            for (auto& [fieldName, typeName] : fieldMap) {
+    //                std::string prefix = "";
+    //                if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+    //                    prefix = "_";
+    //                }
+    //                outFile << "        {" << std::format(" \"{}\", d.{}{} ", fieldName, prefix, fieldName) << "},\n";
+    //            }
+    //            outFile << "    };\n}\n";
+    //            outFile << "void from_json(const json& j, " << structureNamespaceString << "::" << structName << "& d)\n{\n    json t = j;\n";
+    //            for (auto& [fieldName, typeName] : fieldMap) {
+    //                std::string prefix = "";
+    //                if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+    //                    prefix = "_";
+    //                }
+    //                outFile << std::format("    SkyDreamBeta::JsonUtils::getAndRemove(t, \"{}\", d.{}{});\n", fieldName, prefix, fieldName);
+    //            }
+    //            outFile << "    _ASSERT_EXPR(t.size() == 0, \"Key size must be 0\");\n}\n";
+    //        });
+    //        // 关闭文件
+    //        outFile.close();
+    //    }
+    //}
+    //for (auto& [structName, fieldMap] : eventMap) {
+    //    // 创建或打开文件用于写入
+    //    std::ofstream outFile(std::format("github/event/{}.h", structName));
+    //    // 检查文件是否成功打开
+    //    if (outFile.is_open()) {
+    //        outFile << "#pragma once\n#include \"Global.h\"\n#include \"utils/JsonUtils.h\"\n";
+    //        typeNameMap.clear();
+    //        bool existOptional = false;
+    //        bool existVector = false;
+    //        for (auto& [fieldName, typeName] : fieldMap) {
+    //            auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2").value_or(typeName);
+    //            if (structMap.contains(unwarpTypeName)) {
+    //                typeNameMap.try_emplace(std::format("../structure/{}", unwarpTypeName), 0);
+    //            } else if (eventMap.contains(unwarpTypeName)) {
+    //                typeNameMap.try_emplace(std::format("{}", unwarpTypeName), 0);
+    //            }
+    //            if (!existOptional) {
+    //                if (optionalTypeRegex.exist(typeName).value_or(false)) {
+    //                    typeNameMap.emplace("optional", 1);
+    //                    existOptional = true;
+    //                }
+    //            }
+    //            if (!existVector) {
+    //                if (vectorTypeRegex.exist(typeName).value_or(false)) {
+    //                    typeNameMap.emplace("vector", 1);
+    //                    existVector = true;
+    //                }
+    //            }
+    //        }
+    //        for (auto& [typeName, type] : typeNameMap) {
+    //            if (type == 0) {
+    //                outFile << std::format("#include \"{}.h\"\n", typeName);
+    //            } else {
+    //                outFile << std::format("#include <{}>\n", typeName);
+    //            }
+    //        }
+    //        outFile << "\n";
+    //        wirteNamespace(outFile, eventNamespaceString, [&]() {
+    //            outFile << "struct " << structName << "\n{\n";
+    //            for (auto& [fieldName, typeName] : fieldMap) {
+    //                std::string prefix = "";
+    //                if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+    //                    prefix = "_";
+    //                }
+    //                auto unwarpTypeName = unwarpTypeRegex.replace(typeName, "$2", matchInfoList).value_or(typeName);
+    //                if (structMap.contains(unwarpTypeName)) {
+    //                    outFile << std::format("    {} {}{};\n", typeName.replace(matchInfoList[0].group[2].start, 0, "Structure::"), prefix, fieldName);
+    //                } else if (eventMap.contains(unwarpTypeName)) {
+    //                    outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
+    //                } else {
+    //                    outFile << std::format("    {} {}{};\n", typeName, prefix, fieldName);
+    //                }
+    //            }
+    //            outFile << "};\n";
+    //        });
+    //        wirteNamespace(outFile, "nlohmann", [&]() {
+    //            outFile << "void to_json(json& j, const " << eventNamespaceString << "::" << structName << "& d);\n";
+    //            outFile << "void from_json(const json& j, " << eventNamespaceString << "::" << structName << "& d);\n";
+    //        });
+    //        // 关闭文件
+    //        outFile.close();
+    //    }
+    //    // 创建或打开文件用于写入
+    //    outFile = std::ofstream(std::format("github/event/{}.cpp", structName));
+    //    // 检查文件是否成功打开
+    //    if (outFile.is_open()) {
+    //        outFile << "#include \"" << structName << ".h\"\n";
+    //        wirteNamespace(outFile, "nlohmann", [&]() {
+    //            outFile << "void to_json(json& j, const " << eventNamespaceString << "::" << structName << "& d)\n{\n    j = json {\n";
+    //            for (auto& [fieldName, typeName] : fieldMap) {
+    //                std::string prefix = "";
+    //                if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+    //                    prefix = "_";
+    //                }
+    //                outFile << "        {" << std::format(" \"{}\", d.{}{} ", fieldName, prefix, fieldName) << "},\n";
+    //            }
+    //            outFile << "    };\n}\n";
+    //            outFile << "void from_json(const json& j, " << eventNamespaceString << "::" << structName << "& d)\n{\n    json t = j;\n";
+    //            for (auto& [fieldName, typeName] : fieldMap) {
+    //                std::string prefix = "";
+    //                if (fieldName == "default" || fieldName == "private" || fieldName == "public") {
+    //                    prefix = "_";
+    //                }
+    //                outFile << std::format("    SkyDreamBeta::JsonUtils::getAndRemove(t, \"{}\", d.{}{});\n", fieldName, prefix, fieldName);
+    //            }
+    //            outFile << "    _ASSERT_EXPR(t.size() == 0, \"Key size must be 0\");\n}\n";
+    //        });
+    //        // 关闭文件
+    //        outFile.close();
+    //    }
+    //}
+    //for (auto& structName : hrefFieldSet) {
+    //    // 创建或打开文件用于写入
+    //    std::ofstream outFile(std::format("github/structure/{}_url.h", structName));
+    //    // 检查文件是否成功打开
+    //    if (outFile.is_open()) {
+    //        outFile << "#pragma once\n#include \"Global.h\"\n#include \"utils/JsonUtils.h\"\n\nnamespace SkyDreamBeta::Network::Github::Structure\n{\nstruct " << structName << "_url\n{\n    std::string href;\n};\n}\nnamespace nlohmann\n{\nvoid to_json(json& j, const SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d);\nvoid from_json(const json& j, SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d);\n}\n";
+    //        // 关闭文件
+    //        outFile.close();
+    //    }
+    //    // 创建或打开文件用于写入
+    //    outFile = std::ofstream(std::format("github/structure/{}_url.cpp", structName));
+    //    // 检查文件是否成功打开
+    //    if (outFile.is_open()) {
+    //        outFile << "#include \"" << structName << "_url.h\"\nnamespace nlohmann\n{\nvoid to_json(json& j, const SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d)\n{\n    j = json {\n        { \"href\", d.href },\n    };\n}\nvoid from_json(const json& j, SkyDreamBeta::Network::Github::Structure::" << structName << "_url& d)\n{\n    json t = j;\n    SkyDreamBeta::JsonUtils::getAndRemove(t, \"href\", d.href);\n    _ASSERT_EXPR(t.size() == 0, \"Key size must be 0\");\n}\n}\n";
+    //        // 关闭文件
+    //        outFile.close();
+    //    }
+    //}
     return content;
 }
