@@ -275,6 +275,28 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
         appendJsonKeyType("ReleasePayload", { "repository" }, { "", "std::string", "visibility" });
         appendJsonKeyType("ReleasePayload", { "repository" }, { "", "bool", "web_commit_signoff_required" });
         changeJsonKeyType("ReleasePayload", { "installation" }, "std::optional<struct>");
+        changeJsonKeyType("PushPayload", { "commits" ,"sha" }, "std::optional<std::string>");
+        changeJsonKeyType("PushPayload", { "commits" ,"node_id" }, "std::optional<std::string>");
+        changeJsonKeyType("PushPayload", { "head_commit" ,"node_id" }, "std::optional<std::string>");
+        appendJsonKeyType("PushPayload", { "repository", "owner" }, { "", "std::string", "email" });
+        appendJsonKeyType("PushPayload", { "repository", "owner" }, { "", "std::string", "name" });
+        appendJsonKeyType("PushPayload", { "repository" }, { "", "bool", "allow_forking" });
+        appendJsonKeyType("PushPayload", { "repository" }, { "", "bool", "archived" });
+        appendJsonKeyType("PushPayload", { "repository" }, { "", "std::string", "deployments_url" });
+        appendJsonKeyType("PushPayload", { "repository" }, { "", "bool", "disabled" });
+        appendJsonKeyType("PushPayload", { "repository" }, { "", "bool", "has_discussions" });
+        appendJsonKeyType("PushPayload", { "repository" }, { "", "bool", "has_projects" });
+        appendJsonKeyType("PushPayload", { "repository" }, { "", "bool", "is_template" });
+        appendJsonKeyType("PushPayload", { "repository" }, { appendStructInfo("License"), "struct", "license" });
+        appendJsonKeyType("PushPayload", { "repository", "license" }, { "", "std::string", "key" });
+        appendJsonKeyType("PushPayload", { "repository", "license" }, { "", "std::string", "name" });
+        appendJsonKeyType("PushPayload", { "repository", "license" }, { "", "std::string", "node_id" });
+        appendJsonKeyType("PushPayload", { "repository", "license" }, { "", "std::string", "spdx_id" });
+        appendJsonKeyType("PushPayload", { "repository", "license" }, { "", "std::string", "url" });
+        appendJsonKeyType("PushPayload", { "repository" }, { "", "std::vector<std::string>", "topics" });
+        appendJsonKeyType("PushPayload", { "repository" }, { "", "std::string", "visibility" });
+        appendJsonKeyType("PushPayload", { "repository" }, { "", "bool", "web_commit_signoff_required" });
+        changeJsonKeyType("PushPayload", { "installation" }, "std::optional<struct>");
         // 创建目录
         std::filesystem::create_directories("github");
         for (auto& [eventName, decodeFieldList] : headStructInfoMap) {
