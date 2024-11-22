@@ -217,13 +217,70 @@ std::string github::webhook::Webhook::transform(std::string fileName) {
         for (auto& typeStructMatchInfo : *typeFindResult) {
             headStructInfoMap.emplace(typeStructMatchInfo["eventName"], decodeFieldFunction(typeStructMatchInfo["eventBody"]));
         }
+        std::function<void(std::vector<FieldInfo>& fieldInfoList, const std::vector<std::string>& keyLink, const FieldInfo& fieldInfo, int index)> appendJsonKeyTypeLoop = [&](std::vector<FieldInfo>& fieldInfoList, const std::vector<std::string>& keyLink, const FieldInfo& fieldInfo, int index) {
+                if (index < keyLink.size()) {
+                    for (auto& fieldInfoData : fieldInfoList) {
+                        if (fieldInfoData.keyName == keyLink[index]) {
+                            auto& [name, list] = structInfoMap[fieldInfoData.fieldName];
+                            appendJsonKeyTypeLoop(list, keyLink, fieldInfo, index + 1);
+                        }
+                    }
+                } else {
+                    fieldInfoList.emplace_back(fieldInfo);
+                }
+            };
+        auto appendJsonKeyType = [&](const std::string& eventName, const std::vector<std::string>& keyLink, const FieldInfo& fieldInfo) {
+                auto& eventInfo = headStructInfoMap[eventName];
+                appendJsonKeyTypeLoop(eventInfo, keyLink, fieldInfo, 0);
+            };
+        auto appendStructInfo = [&](const std::string& structName) {
+                auto idString = std::format("{}", id);
+                structInfoMap.emplace(idString, std::make_tuple<>(structName, std::vector<FieldInfo>()));
+                id++;
+                return idString;
+            };
+        std::function<void(std::vector<FieldInfo>& fieldInfoList, const std::vector<std::string>& keyLink, const std::string& newTypeName, size_t index)> changeJsonKeyTypeLoop = [&](std::vector<FieldInfo>& fieldInfoList, const std::vector<std::string>& keyLink, const std::string& newTypeName, size_t index) {
+                if (index < keyLink.size()) {
+                    for (auto& fieldInfoData : fieldInfoList) {
+                        if (fieldInfoData.keyName == keyLink[index]) {
+                            if (index + 1 == keyLink.size()) {
+                                fieldInfoData.typeName = newTypeName;
+                            } else {
+                                auto& [name, list] = structInfoMap[fieldInfoData.fieldName];
+                                changeJsonKeyTypeLoop(list, keyLink, newTypeName, index + 1);
+                            }
+                        }
+                    }
+                }
+            };
+        auto changeJsonKeyType = [&](const std::string& eventName, const std::vector<std::string>& keyLink, const std::string& newTypeName) {
+                auto& eventInfo = headStructInfoMap[eventName];
+                changeJsonKeyTypeLoop(eventInfo, keyLink, newTypeName, 0);
+            };
+        appendJsonKeyType("ReleasePayload", { "repository" }, { "", "bool", "allow_forking" });
+        appendJsonKeyType("ReleasePayload", { "repository" }, { "", "bool", "archived" });
+        appendJsonKeyType("ReleasePayload", { "repository" }, { "", "std::string", "deployments_url" });
+        appendJsonKeyType("ReleasePayload", { "repository" }, { "", "bool", "disabled" });
+        appendJsonKeyType("ReleasePayload", { "repository" }, { "", "bool", "has_discussions" });
+        appendJsonKeyType("ReleasePayload", { "repository" }, { "", "bool", "has_projects" });
+        appendJsonKeyType("ReleasePayload", { "repository" }, { "", "bool", "is_template" });
+        appendJsonKeyType("ReleasePayload", { "repository" }, { appendStructInfo("License"), "struct", "license" });
+        appendJsonKeyType("ReleasePayload", { "repository", "license" }, { "", "std::string", "key" });
+        appendJsonKeyType("ReleasePayload", { "repository", "license" }, { "", "std::string", "name" });
+        appendJsonKeyType("ReleasePayload", { "repository", "license" }, { "", "std::string", "node_id" });
+        appendJsonKeyType("ReleasePayload", { "repository", "license" }, { "", "std::string", "spdx_id" });
+        appendJsonKeyType("ReleasePayload", { "repository", "license" }, { "", "std::string", "url" });
+        appendJsonKeyType("ReleasePayload", { "repository" }, { "", "std::string", "node_id" });
+        appendJsonKeyType("ReleasePayload", { "repository" }, { "", "std::vector<std::string>", "topics" });
+        appendJsonKeyType("ReleasePayload", { "repository" }, { "", "std::string", "visibility" });
+        appendJsonKeyType("ReleasePayload", { "repository" }, { "", "bool", "web_commit_signoff_required" });
+        changeJsonKeyType("ReleasePayload", { "installation" }, "std::optional<struct>");
         // 创建目录
         std::filesystem::create_directories("github");
         for (auto& [eventName, decodeFieldList] : headStructInfoMap) {
             // 创建或打开文件用于写入
             std::ofstream outFile(std::format("github/{}.h", eventName));
             if (outFile.is_open()) {
-                bool b = eventName == "CheckRunPayload";
                 outFile << "#pragma once\n#include \"Global.h\"\n#include \"utils/JsonUtils.h\"\n#include <optional>\n#include <string>\n#include <vector>\n";
                 needIncludeFile.clear();
                 std::function<void(const std::vector<FieldInfo>& fieldInfoList)> traverseInclude = [&](const std::vector<FieldInfo>& fieldInfoList) {
