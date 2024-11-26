@@ -1,3 +1,6 @@
+#ifndef _MSC_VER
+#define __debugbreak void
+#endif
 #include "command/Command.h"
 #include "Pdb.h"
 #include "PdbCommand.h"
