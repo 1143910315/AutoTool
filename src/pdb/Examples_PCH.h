@@ -6,6 +6,7 @@
 #include <raw_pdb/Foundation/PDB_Warnings.h>
 #include <raw_pdb/Foundation/PDB_DisableWarningsPush.h>
 
+#if defined(_MSC_VER)
 	// we compile without exceptions
 #	define _ALLOW_RTCc_IN_STL
 
@@ -18,6 +19,7 @@
 #	pragma warning (disable : 5026)		// move constructor was implicitly defined as deleted
 #	pragma warning (disable : 5027)		// move assignment operator was implicitly defined as deleted
 #	pragma warning (disable : 4774)		// format string expected in argument 1 is not a string literal
+#endif
 
 #ifdef _WIN32
 #	define NOMINMAX

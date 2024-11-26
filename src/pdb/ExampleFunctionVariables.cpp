@@ -7,6 +7,7 @@
 #include <raw_pdb/PDB_RawFile.h>
 #include <raw_pdb/PDB_DBIStream.h>
 #include <raw_pdb/PDB_TPIStream.h>
+#include <cstring>
 
 using SymbolRecordKind = PDB::CodeView::DBI::SymbolRecordKind;
 
