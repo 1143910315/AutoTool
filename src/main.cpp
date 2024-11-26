@@ -1,5 +1,6 @@
 #include "command/Command.h"
 #include "github/webhook/WebhookCommand.h"
+#include "pdb/PdbCommand.h"
 #include <cstring>
 #include <iostream>
 #include <pcre2.h>
@@ -15,6 +16,7 @@ int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
     github::webhook::WebhookCommand::init();
+    pdb::PdbCommand::init();
     while (command::Command::instance()->execute()) {
     }
     return 0;

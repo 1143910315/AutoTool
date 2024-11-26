@@ -3,11 +3,11 @@ add_rules("plugin.vsxmake.autoupdate")
 
 if is_mode("debug") then
     set_runtimes("MDd")
-    add_requires("pcre2", {debug = true})
 else
     set_runtimes("MD")
-    add_requires("pcre2")
 end
+add_requires("pcre2")
+add_requires("raw_pdb main")
 
 target("AutoTool")
     add_cxflags(
@@ -17,7 +17,8 @@ target("AutoTool")
         "cl::/INCREMENTAL"
     )
     add_packages(
-        "pcre2"
+        "pcre2",
+        "raw_pdb"
     )
     if is_mode("debug") then
         add_defines("_DEBUG")
