@@ -1,4 +1,6 @@
-
+#ifndef _MSC_VER
+#define __debugbreak void
+#endif
 #include "Pdb.h"
 #include "Examples_PCH.h"
 #include "ExampleMemoryMappedFile.h"
