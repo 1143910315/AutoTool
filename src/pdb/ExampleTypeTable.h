@@ -1,5 +1,7 @@
 #pragma once
-
+#ifndef _MSC_VER
+#define __debugbreak void
+#endif
 #include <raw_pdb/PDB_TPIStream.h>
 #include <raw_pdb/PDB_CoalescedMSFStream.h>
 
