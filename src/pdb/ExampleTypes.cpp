@@ -1,4 +1,6 @@
-
+#ifndef _MSC_VER
+#define __debugbreak void
+#endif
 #include "Examples_PCH.h"
 #include "ExampleTimedScope.h"
 #include "ExampleTypeTable.h"
