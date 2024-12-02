@@ -5,9 +5,9 @@
 #include <memory>
 
 void pdb::PdbCommand::init() {
-    auto operatePdbCommand = command::Command::instance()->addCommand("从go代码生成Pdb代码", []() {
+    auto operatePdbCommand = command::Command::instance()->addCommand("输出PDB文件信息", []() {
         std::string path;
-        std::cout << "请输入go代码文件路径:";
+        std::cout << "请输入PDB文件路径:";
         std::cin >> path;
         if (std::cin) {
             Pdb::getInfo(removeQuotes(path));
