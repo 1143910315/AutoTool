@@ -3,11 +3,13 @@ add_rules("plugin.vsxmake.autoupdate")
 
 if is_mode("debug") then
     set_runtimes("MDd")
+    add_requires("pcre2", {debug = true})
+    add_requires("raw_pdb main", {debug = true})
 else
     set_runtimes("MD")
+    add_requires("pcre2")
+    add_requires("raw_pdb main")
 end
-add_requires("pcre2")
-add_requires("raw_pdb main")
 
 target("AutoTool")
     add_cxflags(

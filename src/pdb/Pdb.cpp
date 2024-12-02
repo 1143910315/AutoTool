@@ -104,6 +104,7 @@ void pdb::Pdb::getInfo(std::string fileName) {
 		printf("Cannot memory-map file %s\n", fileName.data());
 
 		// return 1;
+		return;
 	}
 
 	if (IsError(PDB::ValidateFile(pdbFile.baseAddress, pdbFile.len)))
@@ -111,6 +112,7 @@ void pdb::Pdb::getInfo(std::string fileName) {
 		MemoryMappedFile::Close(pdbFile);
 
 		// return 2;
+		return;
 	}
 
 	const PDB::RawFile rawPdbFile = PDB::CreateRawFile(pdbFile.baseAddress);
@@ -118,7 +120,8 @@ void pdb::Pdb::getInfo(std::string fileName) {
 	{
 		MemoryMappedFile::Close(pdbFile);
 
-		// eturn 3;
+		// return 3;
+		return;
 	}
 
 	const PDB::InfoStream infoStream(rawPdbFile);
@@ -129,6 +132,7 @@ void pdb::Pdb::getInfo(std::string fileName) {
 		MemoryMappedFile::Close(pdbFile);
 
 		// return 4;
+		return;
 	}
 
 	const auto h = infoStream.GetHeader();
@@ -143,6 +147,7 @@ void pdb::Pdb::getInfo(std::string fileName) {
 		MemoryMappedFile::Close(pdbFile);
 
 		// return 5;
+		return;
 	}
 
 	if (IsError(PDB::HasValidTPIStream(rawPdbFile)))
@@ -150,6 +155,7 @@ void pdb::Pdb::getInfo(std::string fileName) {
 		MemoryMappedFile::Close(pdbFile);
 
 		// return 5;
+		return;
 	}
 	const PDB::TPIStream tpiStream = PDB::CreateTPIStream(rawPdbFile);
 
@@ -163,6 +169,7 @@ void pdb::Pdb::getInfo(std::string fileName) {
 			MemoryMappedFile::Close(pdbFile);
 
 			// return 5;
+			return;
 		}
 	}	
 
