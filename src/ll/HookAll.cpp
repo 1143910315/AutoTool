@@ -6,6 +6,7 @@
 #include <string>
 #include <system_error>
 #include <vector>
+#include "regex/Pcre2Implementation.h"
 
 namespace fs = std::filesystem;
 
@@ -53,14 +54,14 @@ std::vector<std::string> get_relative_file_paths(const fs::path& root_dir) {
     return file_paths;
 }
 
-std::string ll::HookAll::generate(std::string srcPath) {
+void ll::HookAll::generate(std::string srcPath) {
     try {
         auto files = get_relative_file_paths(srcPath + "/src/mc");
+        auto removeCommentRegex = regex::Pcre2Implementation("^(?<space>\\s*)(?<structName>\\S+)\\s+struct\\s*\\{(?<body>[^\\{\\}]+)\\}\\s*`json:\"(?<name>\\S+?)(,\\S*)?\"`");
         for (const auto& path : files) {
             std::cout << path << std::endl;
         }
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
     }
-    return std::string();
 }

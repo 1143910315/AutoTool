@@ -10,6 +10,6 @@ namespace ll {
         // 禁止外部赋值操作
         const HookAll& operator=(const HookAll& single) = delete;
     public:
-        static std::string generate(std::string srcPath);
+        static void generate(std::string srcPath);
     };
 } // namespace ll
