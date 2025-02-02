@@ -1,9 +1,7 @@
 #include "command/Command.h"
 #include "github/webhook/WebhookCommand.h"
+#include "ll/HookAllCommand.h"
 #include "pdb/PdbCommand.h"
-#include <cstring>
-#include <iostream>
-#include <pcre2.h>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -17,6 +15,7 @@ int main(int argc, char **argv) {
     (void)argv;
     github::webhook::WebhookCommand::init();
     pdb::PdbCommand::init();
+    ll::HookAllCommand::init();
     while (command::Command::instance()->execute()) {
     }
     return 0;

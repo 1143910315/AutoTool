@@ -14,4 +14,4 @@ namespace github {
             static std::string transform(std::string fileName);
         };
     } // namespace webhook
-}     // namespace github
+} // namespace github

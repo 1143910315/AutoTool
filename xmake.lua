@@ -24,6 +24,7 @@ target("AutoTool")
     )
     if is_mode("debug") then
         add_defines("_DEBUG")
+        set_symbols("debug", "edit")
     end
     set_kind("binary")
     add_includedirs("src")
@@ -31,4 +32,3 @@ target("AutoTool")
     add_headerfiles("src**/*.hpp")
     add_files("src**/*.cpp")
     set_languages("clatest", "cxxlatest")
-    set_symbols("debug", "debug", "edit")
